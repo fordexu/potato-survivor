@@ -597,79 +597,105 @@ function applyUpgrade(g, upgrade) {
   }
 }
 
-function generateShop(g) {
-  const items = [];
+function rollShopItem(g) {
+  const p = g.player;
+  const ownedIds = new Set(p.weapons.map(w => w.def.id));
+  const kindRoll = g.rng();
+  if (kindRoll < 0.4) {
+    const wids = Object.keys(WEAPONS);
+    const pick = wids[Math.floor(g.rng() * wids.length)];
+    const def = WEAPONS[pick];
+    let rarity = def.rarity;
+    if (g.rng() < p.stats.luck / 200) {
+      const idx = RARITY_ORDER.indexOf(rarity);
+      rarity = RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, idx + 1)];
+    }
+    const owned = ownedIds.has(pick);
+    const full = p.weapons.length >= 6;
+    let hint = '';
+    if (owned && !full) hint = '已持有 · 再购多一件';
+    else if (owned && full) hint = '已持有 · 将升级该武器';
+    else if (full) hint = '槽位已满 · 随机升级一件';
+    return {
+      kind: 'weapon',
+      id: pick,
+      name: def.name,
+      icon: def.icon,
+      desc: def.desc + (hint ? `\n${hint}` : ''),
+      rarity,
+      price: Math.round(def.price * (1 + (g.wave - 1) * 0.06)),
+      weapon: def,
+      owned,
+      locked: false,
+      sold: false,
+    };
+  }
+  if (kindRoll < 0.62) {
+    const u = pickWeighted(UPGRADES, g.rng, x => x.weight);
+    return {
+      kind: 'upgrade',
+      id: u.id,
+      name: u.name,
+      icon: u.icon,
+      desc: u.desc,
+      rarity: 'common',
+      price: 8 + g.wave + Math.floor(g.rng() * 6),
+      upgrade: u,
+      locked: false,
+      sold: false,
+    };
+  }
+  if (kindRoll < 0.82) {
+    const c = CONSUMABLES[Math.floor(g.rng() * CONSUMABLES.length)];
+    return {
+      kind: 'consumable',
+      id: c.id,
+      name: c.name,
+      icon: c.icon,
+      desc: c.desc,
+      rarity: c.rarity,
+      price: c.price,
+      consumable: c,
+      locked: false,
+      sold: false,
+    };
+  }
+  const ps = PASSIVES[Math.floor(g.rng() * PASSIVES.length)];
+  return {
+    kind: 'passive',
+    id: ps.id,
+    name: ps.name,
+    icon: ps.icon,
+    desc: ps.desc,
+    rarity: ps.rarity,
+    price: Math.round(ps.price * (1 + (g.wave - 1) * 0.06)),
+    passive: ps,
+    locked: false,
+    sold: false,
+  };
+}
+
+function generateShop(g, keepLockedFrom) {
   const p = g.player;
   const slots = 4 + (g.rng() < 0.3 + p.stats.luck / 200 ? 1 : 0);
-  const ownedIds = new Set(p.weapons.map(w => w.def.id));
-  for (let i = 0; i < slots; i++) {
-    const kindRoll = g.rng();
-    if (kindRoll < 0.4) {
-      const wids = Object.keys(WEAPONS);
-      const pick = wids[Math.floor(g.rng() * wids.length)];
-      const def = WEAPONS[pick];
-      let rarity = def.rarity;
-      if (g.rng() < p.stats.luck / 200) {
-        const idx = RARITY_ORDER.indexOf(rarity);
-        rarity = RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, idx + 1)];
-      }
-      const owned = ownedIds.has(pick);
-      const full = p.weapons.length >= 6;
-      let hint = '';
-      if (owned && !full) hint = '已持有 · 再购多一件';
-      else if (owned && full) hint = '已持有 · 将升级该武器';
-      else if (full) hint = '槽位已满 · 随机升级一件';
-      items.push({
-        kind: 'weapon',
-        id: pick,
-        name: def.name,
-        icon: def.icon,
-        desc: def.desc + (hint ? `\n${hint}` : ''),
-        rarity,
-        price: Math.round(def.price * (1 + (g.wave - 1) * 0.06)),
-        weapon: def,
-        owned,
-      });
-    } else if (kindRoll < 0.62) {
-      const u = pickWeighted(UPGRADES, g.rng, x => x.weight);
-      items.push({
-        kind: 'upgrade',
-        id: u.id,
-        name: u.name,
-        icon: u.icon,
-        desc: u.desc,
-        rarity: 'common',
-        price: 8 + g.wave + Math.floor(g.rng() * 6),
-        upgrade: u,
-      });
-    } else if (kindRoll < 0.82) {
-      const c = CONSUMABLES[Math.floor(g.rng() * CONSUMABLES.length)];
-      items.push({
-        kind: 'consumable',
-        id: c.id,
-        name: c.name,
-        icon: c.icon,
-        desc: c.desc,
-        rarity: c.rarity,
-        price: c.price,
-        consumable: c,
-      });
-    } else {
-      const ps = PASSIVES[Math.floor(g.rng() * PASSIVES.length)];
-      items.push({
-        kind: 'passive',
-        id: ps.id,
-        name: ps.name,
-        icon: ps.icon,
-        desc: ps.desc,
-        rarity: ps.rarity,
-        price: Math.round(ps.price * (1 + (g.wave - 1) * 0.06)),
-        passive: ps,
-      });
-    }
+  const items = [];
+  const keep = keepLockedFrom || [];
+  // 先保留锁定且未购买的商品
+  for (const old of keep) {
+    if (old && old.locked && !old.sold) items.push(old);
   }
-  g.shopItems = items;
-  g.rerollCost = 5 + g.wave;
+  while (items.length < slots) items.push(rollShopItem(g));
+  // 若锁定过多，截断到槽位数
+  g.shopItems = items.slice(0, Math.max(slots, items.length));
+  if (!keepLockedFrom) g.rerollCost = 5 + g.wave;
+}
+
+function toggleShopLock(g, idx) {
+  const item = g.shopItems[idx];
+  if (!item || item.sold) return false;
+  item.locked = !item.locked;
+  Sfx.buy();
+  return true;
 }
 
 function buyShopItem(g, idx) {
@@ -682,6 +708,7 @@ function buyShopItem(g, idx) {
   }
   p.materials -= item.price;
   item.sold = true;
+  item.locked = false;
   Sfx.buy();
 
   if (item.kind === 'weapon') {
@@ -712,15 +739,12 @@ function rerollShop(g) {
   }
   p.materials -= g.rerollCost;
   g.rerollCost += 3;
-  generateShopItemsOnly(g);
+  const oldCost = g.rerollCost;
+  // 只刷新未锁定的商品
+  generateShop(g, g.shopItems);
+  g.rerollCost = oldCost;
   Sfx.buy();
   return true;
-}
-
-function generateShopItemsOnly(g) {
-  const oldCost = g.rerollCost;
-  generateShop(g);
-  g.rerollCost = oldCost;
 }
 
 function updateFx(g, dt) {

@@ -60,11 +60,10 @@ function renderLevelup(g) {
 function renderShop(g) {
   $('shop-mat').textContent = g.player.materials;
   $('reroll-cost').textContent = g.rerollCost;
-  // 下一波预览
   const nextWave = g.wave + 1;
   const ncfg = getWaveConfig(Math.min(nextWave, 20));
   const types = [...new Set(ncfg.pool)].map(t => ENEMY_TYPES[t]).filter(Boolean);
-  $('wave-preview').innerHTML = `下一波：${types.map(t => `<span class="wp-chip" title="${t.name}">${t.name}</span>`).join('')}`;
+  $('wave-preview').innerHTML = `下一波：${types.map(t => `<span class="wp-chip" title="${t.name}">${t.name}</span>`).join('')}<span class="lock-hint">Shift+数字锁定 · 重铸时保留</span>`;
 
   const grid = $('shop-items');
   grid.innerHTML = '';
@@ -72,7 +71,9 @@ function renderShop(g) {
     const el = document.createElement('div');
     const sold = item.sold;
     const afford = g.player.materials >= item.price;
-    el.className = `card rarity-${item.rarity}` + ((sold || !afford) ? ' disabled' : '');
+    el.className = `card rarity-${item.rarity}`
+      + ((sold || !afford) ? ' disabled' : '')
+      + (item.locked && !sold ? ' locked' : '');
     let extra = '';
     if (item.kind === 'weapon' && item.weapon) {
       const w = item.weapon;
@@ -83,15 +84,37 @@ function renderShop(g) {
     }
     const kindTag = { weapon: '武器', upgrade: '属性', consumable: '消耗', passive: '被动' }[item.kind] || '';
     el.innerHTML = `
-      <div class="card-icon">${item.icon}</div>
-      <div class="card-name">${item.name}${sold ? '（已购）' : ''}</div>
+      <div class="card-top">
+        <div class="card-icon">${item.icon}</div>
+        <button type="button" class="lock-btn ${item.locked ? 'on' : ''}" data-lock="${i}" title="锁定（重铸保留）">${item.locked ? '🔒' : '🔓'}</button>
+      </div>
+      <div class="card-name">${item.name}${sold ? '（已购）' : ''}${item.locked && !sold ? ' ·已锁' : ''}</div>
       <div class="card-desc">${item.desc.replace(/\n/g, '<br>')}${extra ? `<br><span style="color:#9ab">${extra}</span>` : ''}</div>
       <div class="card-price">${sold ? '—' : item.price + ' ◈'}<span style="float:right;color:#6a5a7a;font-weight:400">${kindTag} ${i + 1}</span></div>
     `;
-    if (!sold) el.onclick = () => onBuy(i);
+    if (!sold) {
+      el.onclick = (ev) => {
+        if (ev && ev.target && ev.target.classList && ev.target.classList.contains('lock-btn')) return;
+        onBuy(i);
+      };
+    }
     grid.appendChild(el);
   });
+  if (grid.querySelectorAll) {
+    grid.querySelectorAll('.lock-btn').forEach((btn) => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-lock'), 10);
+        onToggleLock(idx);
+      };
+    });
+  }
   renderStatsPanel(g);
+}
+
+function onToggleLock(i) {
+  if (!game || game.state !== 'shop') return;
+  if (toggleShopLock(game, i)) renderShop(game);
 }
 
 function renderHud(g) {

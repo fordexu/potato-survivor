@@ -213,7 +213,11 @@ function onKeydown(e) {
       if (n >= 1 && n <= 4) onUpgradePicked(n - 1);
     } else if (game.state === 'shop') {
       const n = parseInt(e.key, 10);
-      if (n >= 1 && n <= 6) onBuy(n - 1);
+      if (e.shiftKey && n >= 1 && n <= 6) {
+        onToggleLock(n - 1);
+      } else if (n >= 1 && n <= 6) {
+        onBuy(n - 1);
+      }
       if (e.code === 'KeyR') { rerollShop(game); renderShop(game); }
       if (e.code === 'Space' || e.code === 'Enter') leaveShop();
     }
