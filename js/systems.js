@@ -1,9 +1,33 @@
 // ===== 游戏系统 =====
 
-const ARENA = { x: 40, y: 40, w: 1200, h: 640 };
+const ARENA = { x: 0, y: 0, w: 2400, h: 1600 };
 
 function arenaCenter() {
   return { x: ARENA.x + ARENA.w / 2, y: ARENA.y + ARENA.h / 2 };
+}
+
+function updateCamera(g, dt) {
+  const p = g.player;
+  if (!g.camera) {
+    g.camera = { x: p.x, y: p.y };
+  }
+  const viewW = (typeof canvas !== 'undefined' && canvas.width) || 1280;
+  const viewH = (typeof canvas !== 'undefined' && canvas.height) || 720;
+  // 目标：玩家居中，并限制在场地内
+  let tx = p.x - viewW / 2;
+  let ty = p.y - viewH / 2;
+  const minX = ARENA.x - 20;
+  const minY = ARENA.y - 20;
+  const maxX = ARENA.x + ARENA.w - viewW + 20;
+  const maxY = ARENA.y + ARENA.h - viewH + 20;
+  if (ARENA.w <= viewW) tx = ARENA.x - (viewW - ARENA.w) / 2;
+  else tx = clamp(tx, minX, Math.max(minX, maxX));
+  if (ARENA.h <= viewH) ty = ARENA.y - (viewH - ARENA.h) / 2;
+  else ty = clamp(ty, minY, Math.max(minY, maxY));
+
+  const k = 1 - Math.exp(-6 * dt);
+  g.camera.x += (tx - g.camera.x) * k;
+  g.camera.y += (ty - g.camera.y) * k;
 }
 
 function createGame(char, seed = Date.now(), difficultyId = 'normal') {
@@ -43,6 +67,7 @@ function createGame(char, seed = Date.now(), difficultyId = 'normal') {
     pendingShop: false,
     score: 0,
     timeScale: 1,
+    camera: null,
   };
 }
 
@@ -116,7 +141,6 @@ function updatePlaying(g, dt, input) {
     p.y += p.dashVy * dt;
     p.x = clamp(p.x, ARENA.x + p.r, ARENA.x + ARENA.w - p.r);
     p.y = clamp(p.y, ARENA.y + p.r, ARENA.y + ARENA.h - p.r);
-    // 残影
     if (g.rng() < 0.6) {
       g.particles.push(makeParticle(p.x, p.y, 0, 0, 0.25, 'rgba(200,220,255,0.55)', 4));
     }
@@ -180,6 +204,7 @@ function updatePlaying(g, dt, input) {
   updateBullets(g, dt);
   updatePickups(g, dt);
   updateFx(g, dt);
+  updateCamera(g, dt);
 
   // 波次结束：全部刷完且清空敌人立刻结算，不必等倒计时
   const allSpawned = !g.waveConfig || g.spawned >= (g.waveConfig.count || 0);

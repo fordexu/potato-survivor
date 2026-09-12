@@ -273,43 +273,50 @@ function drawGame(g) {
 function drawGameInner(g, w, h) {
   ctx.save();
 
+  // 摄像机
+  if (!g.camera) g.camera = { x: g.player.x - w / 2, y: g.player.y - h / 2 };
   if (g.shake > 0) {
     ctx.translate((Math.random() - 0.5) * g.shake, (Math.random() - 0.5) * g.shake);
   }
+  ctx.translate(-Math.round(g.camera.x), -Math.round(g.camera.y));
+
+  // 视口范围（世界坐标）
+  const viewX0 = g.camera.x - 40;
+  const viewY0 = g.camera.y - 40;
+  const viewX1 = g.camera.x + w + 40;
+  const viewY1 = g.camera.y + h + 40;
 
   ctx.fillStyle = '#141018';
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(viewX0, viewY0, viewX1 - viewX0, viewY1 - viewY0);
 
-  // 地板：新贴图平铺 + 边框墙
+  // 地板：只画视口内
   const floorA = getSpriteImg('floor:a');
   const floorB = getSpriteImg('floor:b');
   const ts = 48;
+  const x0 = Math.max(ARENA.x, Math.floor(viewX0 / ts) * ts);
+  const y0 = Math.max(ARENA.y, Math.floor(viewY0 / ts) * ts);
+  const x1 = Math.min(ARENA.x + ARENA.w, viewX1);
+  const y1 = Math.min(ARENA.y + ARENA.h, viewY1);
+
   if (floorA && floorA.width) {
     ctx.imageSmoothingEnabled = false;
-    for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += ts) {
-      for (let x = ARENA.x; x < ARENA.x + ARENA.w; x += ts) {
+    for (let y = y0; y < y1; y += ts) {
+      for (let x = x0; x < x1; x += ts) {
         const ix = ((x - ARENA.x) / ts) | 0;
         const iy = ((y - ARENA.y) / ts) | 0;
         const useB = floorB && ((ix * 3 + iy * 5) % 7 === 0);
         ctx.drawImage(useB ? floorB : floorA, x, y, ts + 1, ts + 1);
       }
     }
-    // 轻微冷色压暗，保持可读
     ctx.fillStyle = 'rgba(18, 14, 28, 0.22)';
     ctx.fillRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
   } else {
     ctx.fillStyle = '#2a2234';
     ctx.fillRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
-    ctx.fillStyle = '#322840';
-    for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += 24) {
-      for (let x = ARENA.x + ((y / 24) % 2 === 0 ? 0 : 12); x < ARENA.x + ARENA.w; x += 24) {
-        ctx.fillRect(x, y, 11, 11);
-      }
-    }
   }
 
   // 外墙
-  const wall = 10;
+  const wall = 12;
   ctx.fillStyle = '#1a1424';
   ctx.fillRect(ARENA.x - wall, ARENA.y - wall, ARENA.w + wall * 2, wall);
   ctx.fillRect(ARENA.x - wall, ARENA.y + ARENA.h, ARENA.w + wall * 2, wall);
@@ -318,20 +325,14 @@ function drawGameInner(g, w, h) {
   ctx.strokeStyle = '#5a4a6a';
   ctx.lineWidth = 2;
   ctx.strokeRect(ARENA.x - wall + 1, ARENA.y - wall + 1, ARENA.w + wall * 2 - 2, ARENA.h + wall * 2 - 2);
-  // 内描边
   ctx.strokeStyle = '#6a5878';
   ctx.lineWidth = 1;
   ctx.strokeRect(ARENA.x + 0.5, ARENA.y + 0.5, ARENA.w - 1, ARENA.h - 1);
 
-  // 暗角
-  const vg = ctx.createRadialGradient(w / 2, h / 2, 240, w / 2, h / 2, Math.max(w, h) * 0.72);
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.35)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, w, h);
-
-  // 拾取物
+  // 暗角（屏幕空间，稍后恢复）
+  // 拾取物（视口剔除）
   for (const item of g.pickups) {
+    if (item.x < viewX0 || item.x > viewX1 || item.y < viewY0 || item.y > viewY1) continue;
     const bob = Math.sin(item.bob) * 2;
     ctx.beginPath();
     if (item.kind === 'mat') {
@@ -353,6 +354,7 @@ function drawGameInner(g, w, h) {
   }
 
   for (const b of g.bullets) {
+    if (b.x < viewX0 || b.x > viewX1 || b.y < viewY0 || b.y > viewY1) continue;
     ctx.fillStyle = b.color;
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
@@ -364,7 +366,10 @@ function drawGameInner(g, w, h) {
     ctx.globalAlpha = 1;
   }
 
-  for (const e of g.enemies) drawEnemy(e);
+  for (const e of g.enemies) {
+    if (e.x < viewX0 - 40 || e.x > viewX1 + 40 || e.y < viewY0 - 40 || e.y > viewY1 + 40) continue;
+    drawEnemy(e);
+  }
   drawPlayer(g.player);
 
   for (const p of g.particles) {
@@ -385,12 +390,22 @@ function drawGameInner(g, w, h) {
   }
   ctx.globalAlpha = 1;
 
+  // 回到屏幕空间
+  ctx.restore();
+  ctx.save();
+
+  // 暗角
+  const vg = ctx.createRadialGradient(w / 2, h / 2, 240, w / 2, h / 2, Math.max(w, h) * 0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+
   if (g.flash > 0) {
     ctx.fillStyle = `rgba(232, 60, 60, ${g.flash * 0.35})`;
     ctx.fillRect(0, 0, w, h);
   }
 
-  // Boss 警告
   if (g.bossAlert > 0) {
     ctx.fillStyle = `rgba(224, 64, 96, ${g.bossAlert * 0.25})`;
     ctx.fillRect(0, 0, w, h);
@@ -400,11 +415,11 @@ function drawGameInner(g, w, h) {
     ctx.fillText('⚠ BOSS 登场 ⚠', w / 2, 80);
   }
 
-  // Boss 血条
+  // Boss 血条（屏幕顶）
   const boss = g.enemies.find(e => e.boss);
   if (boss && boss.spawnAnim <= 0) {
     const bw = 420, bh = 14;
-    const bx = (w - bw) / 2, by = ARENA.y + 10;
+    const bx = (w - bw) / 2, by = 16;
     ctx.fillStyle = 'rgba(0,0,0,.55)';
     ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
     ctx.fillStyle = '#3a2030';
@@ -417,7 +432,38 @@ function drawGameInner(g, w, h) {
     ctx.fillText('暴君', w / 2, by + 11);
   }
 
+  // 小地图
+  drawMinimap(g, w, h);
+
   ctx.restore();
+}
+
+function drawMinimap(g, w, h) {
+  const mw = 140, mh = Math.round(140 * ARENA.h / ARENA.w);
+  const mx = w - mw - 14, my = h - mh - 14;
+  ctx.fillStyle = 'rgba(10, 8, 16, 0.72)';
+  ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4);
+  ctx.strokeStyle = '#5a4a6a';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mx - 2.5, my - 2.5, mw + 5, mh + 5);
+  ctx.fillStyle = '#2a2234';
+  ctx.fillRect(mx, my, mw, mh);
+
+  const sx = mw / ARENA.w;
+  const sy = mh / ARENA.h;
+  // 敌人
+  for (const e of g.enemies) {
+    ctx.fillStyle = e.boss ? '#e04060' : e.elite ? '#e8a838' : '#c06060';
+    ctx.fillRect(mx + (e.x - ARENA.x) * sx - 1, my + (e.y - ARENA.y) * sy - 1, e.boss ? 4 : 2, e.boss ? 4 : 2);
+  }
+  // 玩家
+  const p = g.player;
+  ctx.fillStyle = '#9ad0ff';
+  ctx.fillRect(mx + (p.x - ARENA.x) * sx - 2, my + (p.y - ARENA.y) * sy - 2, 4, 4);
+  // 视口框
+  const cam = g.camera || { x: 0, y: 0 };
+  ctx.strokeStyle = 'rgba(154,208,255,.7)';
+  ctx.strokeRect(mx + cam.x * sx, my + cam.y * sy, canvas.width * sx, canvas.height * sy);
 }
 
 function drawPlayer(p) {
