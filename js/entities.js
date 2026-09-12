@@ -154,14 +154,22 @@ function makeFloatText(x, y, text, color = '#fff', size = 12) {
 }
 
 function spawnEdgePos(arena, rng) {
+  // 在场地内侧边缘刷新，避免掉落在地图外
+  const pad = 24;
   const side = Math.floor(rng() * 4);
-  const m = 30;
   let x, y;
-  if (side === 0) { x = arena.x + rng() * arena.w; y = arena.y - m; }
-  else if (side === 1) { x = arena.x + arena.w + m; y = arena.y + rng() * arena.h; }
-  else if (side === 2) { x = arena.x + rng() * arena.w; y = arena.y + arena.h + m; }
-  else { x = arena.x - m; y = arena.y + rng() * arena.h; }
+  if (side === 0) { x = arena.x + pad + rng() * (arena.w - pad * 2); y = arena.y + pad; }
+  else if (side === 1) { x = arena.x + arena.w - pad; y = arena.y + pad + rng() * (arena.h - pad * 2); }
+  else if (side === 2) { x = arena.x + pad + rng() * (arena.w - pad * 2); y = arena.y + arena.h - pad; }
+  else { x = arena.x + pad; y = arena.y + pad + rng() * (arena.h - pad * 2); }
   return { x, y };
+}
+
+function clampToArena(x, y, margin = 8) {
+  return {
+    x: clamp(x, ARENA.x + margin, ARENA.x + ARENA.w - margin),
+    y: clamp(y, ARENA.y + margin, ARENA.y + ARENA.h - margin),
+  };
 }
 
 function dist(a, b) {

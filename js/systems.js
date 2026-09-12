@@ -384,19 +384,23 @@ function damageEnemy(g, e, dmg, crit, angle = 0, kb = 0) {
     const luckBonus = p.stats.luck / 100;
     const matMulD = (g.difficulty && g.difficulty.matMul) || 1;
     const xpMulD = (g.difficulty && g.difficulty.xpMul) || 1;
+    // 掉落物夹在场地内，保证能捡到
+    const drop = clampToArena(e.x, e.y, 12);
     if (g.rng() < 0.9 + luckBonus * 0.08) {
       const matVal = Math.max(1, Math.round(e.mat * (1 + p.stats.harvesting / 100) * matMulD));
-      g.pickups.push(makePickup(e.x, e.y, 'mat', matVal));
+      g.pickups.push(makePickup(drop.x, drop.y, 'mat', matVal));
     }
     // 赏金令
     const bounty = p.passives.bounty || 0;
     if (bounty > 0) {
       const bv = Math.round(bounty * (1 + p.stats.harvesting / 100) * matMulD);
-      g.pickups.push(makePickup(e.x + 8, e.y, 'mat', bv));
+      const bdrop = clampToArena(drop.x + 8, drop.y, 12);
+      g.pickups.push(makePickup(bdrop.x, bdrop.y, 'mat', bv));
     }
-    g.pickups.push(makePickup(e.x + (g.rng() - 0.5) * 10, e.y + (g.rng() - 0.5) * 10, 'xp', Math.max(1, Math.round(e.xp * xpMulD))));
+    const xdrop = clampToArena(drop.x + (g.rng() - 0.5) * 10, drop.y + (g.rng() - 0.5) * 10, 12);
+    g.pickups.push(makePickup(xdrop.x, xdrop.y, 'xp', Math.max(1, Math.round(e.xp * xpMulD))));
     if (g.rng() < 0.03 + luckBonus * 0.05) {
-      g.pickups.push(makePickup(e.x, e.y, 'heal', 2));
+      g.pickups.push(makePickup(drop.x, drop.y, 'heal', 2));
     }
     for (let i = 0; i < (e.boss ? 20 : e.elite ? 12 : 8); i++) {
       const a = g.rng() * Math.PI * 2;
@@ -509,8 +513,8 @@ function updateEnemies(g, dt) {
     }
 
     // 保持在场地附近
-    e.x = clamp(e.x, ARENA.x - 80, ARENA.x + ARENA.w + 80);
-    e.y = clamp(e.y, ARENA.y - 80, ARENA.y + ARENA.h + 80);
+    e.x = clamp(e.x, ARENA.x + e.r, ARENA.x + ARENA.w - e.r);
+    e.y = clamp(e.y, ARENA.y + e.r, ARENA.y + ARENA.h - e.r);
 
     // 碰撞玩家
     if (e.touchDamage && dist(e, p) < e.r + p.r) {
@@ -606,6 +610,13 @@ function updatePickups(g, dt) {
   const pickupR = 120 * (1 + p.stats.pickupRange / 100);
   for (const item of g.pickups) {
     item.bob += dt * 4;
+    // 兜底：任何在场外的掉落拉回场内
+    if (item.x < ARENA.x + 6 || item.x > ARENA.x + ARENA.w - 6 ||
+        item.y < ARENA.y + 6 || item.y > ARENA.y + ARENA.h - 6) {
+      const c = clampToArena(item.x, item.y, 10);
+      item.x = c.x;
+      item.y = c.y;
+    }
     const d = dist(item, p);
     if (d < pickupR) item.magnet = true;
     if (item.magnet) {
