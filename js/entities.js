@@ -196,20 +196,16 @@ function makeSpriteCanvas(w, h) {
 }
 
 function drawPixelBlob(g, color, r, style) {
-  const size = r * 2 + 2;
+  const size = Math.max(8, Math.ceil(r * 2 + 2));
   const c = makeSpriteCanvas(size, size);
   const x = c.getContext('2d');
+  if (!x) return null;
   x.imageSmoothingEnabled = false;
   const cx = size / 2, cy = size / 2;
   const px = Math.max(2, Math.floor(r / 5));
 
-  // 身体
   x.fillStyle = color;
-  if (style === 'circle') {
-    x.beginPath();
-    x.arc(cx, cy, r, 0, Math.PI * 2);
-    x.fill();
-  } else if (style === 'diamond') {
+  if (style === 'diamond') {
     x.beginPath();
     x.moveTo(cx, cy - r);
     x.lineTo(cx + r, cy);
@@ -228,11 +224,9 @@ function drawPixelBlob(g, color, r, style) {
     x.closePath();
     x.fill();
   } else if (style === 'potato') {
-    // 土豆：略椭圆 + 边缘像素块
     x.beginPath();
     x.ellipse(cx, cy, r * 0.95, r, 0, 0, Math.PI * 2);
     x.fill();
-    // 边缘锯齿像素
     x.fillStyle = color;
     x.fillRect(cx - r * 0.5, cy - r * 0.85, px * 2, px);
     x.fillRect(cx + r * 0.2, cy - r * 0.9, px * 2, px);
@@ -244,20 +238,16 @@ function drawPixelBlob(g, color, r, style) {
     x.fill();
   }
 
-  // 高光
   x.fillStyle = 'rgba(255,255,255,0.2)';
   x.fillRect(cx - r * 0.35, cy - r * 0.4, px * 2, px * 2);
 
-  // 眼睛
   x.fillStyle = '#1a1018';
   const ey = cy - r * 0.12;
   x.fillRect(cx - r * 0.4, ey, px, px + 1);
   x.fillRect(cx + r * 0.15, ey, px, px + 1);
 
   if (style === 'potato') {
-    // 嘴
     x.fillRect(cx - px, cy + r * 0.2, px * 2, px);
-    // 腮红
     x.fillStyle = 'rgba(200,80,80,0.25)';
     x.fillRect(cx - r * 0.55, cy + r * 0.05, px, px);
     x.fillRect(cx + r * 0.35, cy + r * 0.05, px, px);
@@ -267,12 +257,20 @@ function drawPixelBlob(g, color, r, style) {
 }
 
 function getSprite(key, factory) {
-  if (!SpriteCache.has(key)) SpriteCache.set(key, factory());
-  return SpriteCache.get(key);
+  if (SpriteCache.has(key)) return SpriteCache.get(key);
+  let spr = null;
+  try {
+    spr = factory();
+  } catch (e) {
+    spr = null;
+  }
+  // 无效 sprite 不写入缓存，便于下次重试；调用方会 fallback
+  if (spr && spr.width > 0 && spr.height > 0) SpriteCache.set(key, spr);
+  return spr;
 }
 
 function getPlayerSprite(color) {
-  return getSprite('p:' + color, () => drawPixelBlob(color, 14, 'potato'));
+  return getSprite('p:' + color, () => drawPixelBlob(color || '#c4a56a', 14, 'potato'));
 }
 
 function getEnemySprite(typeId, color, r) {

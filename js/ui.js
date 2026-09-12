@@ -200,7 +200,25 @@ function renderEnd(g, victory) {
 // ===== Canvas 绘制 =====
 
 function drawGame(g) {
+  if (!g || !g.player) return;
   const w = canvas.width, h = canvas.height;
+  try {
+    drawGameInner(g, w, h);
+  } catch (err) {
+    // 最后兜底：保证场上至少能看到玩家
+    try {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#141018';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = g.player.color || '#c4a56a';
+      ctx.beginPath();
+      ctx.arc(g.player.x, g.player.y, g.player.r || 14, 0, Math.PI * 2);
+      ctx.fill();
+    } catch (_) { /* ignore */ }
+  }
+}
+
+function drawGameInner(g, w, h) {
   ctx.save();
 
   if (g.shake > 0) {
@@ -332,35 +350,61 @@ function drawGame(g) {
 
 function drawPlayer(p) {
   const { x, y, r } = p;
+  const R = r || 14;
+  // 影子
   ctx.fillStyle = 'rgba(0,0,0,.35)';
   ctx.beginPath();
-  ctx.ellipse(x, y + r * 0.7, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y + R * 0.7, R * 0.9, R * 0.35, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
-  if (p.invuln > 0 && Math.floor(p.invuln * 12) % 2 === 0) ctx.globalAlpha = 0.4;
+  if (p.invuln > 0 && Math.floor(p.invuln * 12) % 2 === 0) ctx.globalAlpha = 0.45;
 
-  const sprite = getPlayerSprite(p.color);
-  // 走路轻微上下
-  const bob = (p.walkT && Math.sin(p.walkT) * 1.5) || 0;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sprite, Math.round(x - sprite.width / 2), Math.round(y - sprite.height / 2 + bob));
+  const bob = p.walkT ? Math.sin(p.walkT) * 1.5 : 0;
+  const py = y + bob;
+
+  // 土豆身体（直接绘制，保证可见）
+  ctx.fillStyle = p.color || '#c4a56a';
+  ctx.beginPath();
+  ctx.ellipse(x, py, R * 0.95, R, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 边缘像素块
+  ctx.fillRect(x - R * 0.5, py - R * 0.85, 5, 3);
+  ctx.fillRect(x + R * 0.2, py - R * 0.9, 5, 3);
+  ctx.fillRect(x - R * 0.7, py + R * 0.5, 3, 5);
+  ctx.fillRect(x + R * 0.4, py + R * 0.45, 3, 5);
+
+  // 高光
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(x - R * 0.25, py - R * 0.3, R * 0.4, R * 0.3, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 眼睛/嘴
+  ctx.fillStyle = '#2a2030';
+  ctx.fillRect(x - 5, py - 4, 3, 4);
+  ctx.fillRect(x + 2, py - 4, 3, 4);
+  ctx.fillRect(x - 2, py + 3, 4, 2);
+  ctx.fillStyle = 'rgba(200,80,80,0.28)';
+  ctx.fillRect(x - 8, py + 1, 3, 2);
+  ctx.fillRect(x + 5, py + 1, 3, 2);
 
   // 武器
   const n = p.weapons.length;
   for (let i = 0; i < n; i++) {
     const w = p.weapons[i];
-    const aim = w.aimAngle || w.angle;
-    const orbit = w.angle;
-    const ox = x + Math.cos(orbit) * (r + 10);
-    const oy = y + Math.sin(orbit) * (r + 7);
+    const aim = w.aimAngle || w.angle || 0;
+    const orbit = w.angle || 0;
+    const ox = x + Math.cos(orbit) * (R + 10);
+    const oy = py + Math.sin(orbit) * (R + 7);
     const rec = (w.recoil || 0) * 4;
     const kx = ox - Math.cos(aim) * rec;
     const ky = oy - Math.sin(aim) * rec;
     ctx.save();
     ctx.translate(kx, ky);
     ctx.rotate(aim);
-    ctx.fillStyle = w.def.color;
+    ctx.fillStyle = (w.def && w.def.color) || '#e8d4a0';
     ctx.fillRect(-3, -3, 10, 6);
     ctx.fillStyle = '#1a1420';
     ctx.fillRect(4, -1, 4, 2);
@@ -371,12 +415,11 @@ function drawPlayer(p) {
     ctx.restore();
   }
 
-  // 连杀提示
   if (p.killStreak >= 5) {
     ctx.fillStyle = '#ffe060';
     ctx.font = 'bold 12px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`${p.killStreak} 连杀`, x, y - r - 16);
+    ctx.fillText(p.killStreak + ' 连杀', x, py - R - 16);
   }
 
   ctx.restore();
@@ -402,16 +445,32 @@ function drawEnemy(e) {
   ctx.fill();
 
   const col = e.hitFlash > 0 ? '#ffffff' : e.color;
-  // 用缓存 sprite 时 hitFlash 需要 tint，这里简单重绘色块
-  if (e.hitFlash > 0) {
-    ctx.fillStyle = col;
+  ctx.fillStyle = col;
+  if (e.boss) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (e.elite) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x - r, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
-  } else {
-    const sprite = getEnemySprite(e.type, e.color, Math.round(r));
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(sprite, Math.round(x - sprite.width / 2), Math.round(y - sprite.height / 2));
   }
 
   if (e.boss) {

@@ -63,17 +63,25 @@ function onBuy(i) {
 function startNewGame(char) {
   game = createGame(char);
   paused = false;
+  running = true;
+  lastTs = performance.now();
   hide('menu');
   hide('gameover');
   hide('shop');
   hide('levelup');
   hide('pause-layer');
+  hide('help-layer');
   show('hud');
-  startWave(game);
+  try { startWave(game); } catch (e) { game.state = 'playing'; }
   showBanner(1, '生存下去！');
-  renderHud(game);
-  running = true;
-  lastTs = performance.now();
+  try { renderHud(game); } catch (e) { /* non-fatal */ }
+  // 确保画布可接收键盘（预览 iframe 尤其需要）
+  try {
+    if (canvas.setAttribute) canvas.setAttribute('tabindex', '0');
+    if (canvas.focus) canvas.focus();
+  } catch (e) { /* ignore */ }
+  // 立即画一帧，避免空白
+  try { drawGame(game); } catch (e) { /* ignore */ }
 }
 
 function goMenu() {
@@ -119,39 +127,39 @@ function togglePause() {
 }
 
 function loop(ts) {
-  if (!running || !game) {
-    requestAnimationFrame(loop);
-    return;
-  }
-  const dt = Math.min(0.05, (ts - lastTs) / 1000);
+  requestAnimationFrame(loop);
+  if (!running || !game) return;
+
+  const dt = Math.min(0.05, Math.max(0, (ts - lastTs) / 1000));
   lastTs = ts;
 
   if (!paused && game.state === 'playing') {
-    updatePlaying(game, dt, input);
-    if (game.state === 'shop') {
-      enterShop();
-    } else if (game.state === 'levelup') {
-      renderLevelup(game);
-      show('levelup');
-    } else if (game.state === 'gameover') {
-      renderEnd(game, false);
-      running = false;
-    } else if (game.state === 'victory') {
-      renderEnd(game, true);
-      running = false;
+    try {
+      updatePlaying(game, dt, input);
+    } catch (e) {
+      // 更新失败不让主循环死掉
+      console.error('update error', e);
     }
-    renderHud(game);
+    try {
+      if (game.state === 'shop') enterShop();
+      else if (game.state === 'levelup') { renderLevelup(game); show('levelup'); }
+      else if (game.state === 'gameover') { renderEnd(game, false); running = false; }
+      else if (game.state === 'victory') { renderEnd(game, true); running = false; }
+      else renderHud(game);
+    } catch (e) { console.error('ui state error', e); }
   }
 
-  if (showStatsHold && game && game.state === 'playing') {
-    renderStatsPanel(game);
-    $('stats-overlay').classList.remove('hidden');
-  } else {
-    $('stats-overlay').classList.add('hidden');
+  try {
+    if (showStatsHold && game.state === 'playing') {
+      renderStatsPanel(game);
+      $('stats-overlay').classList.remove('hidden');
+    } else {
+      $('stats-overlay').classList.add('hidden');
+    }
+    drawGame(game);
+  } catch (e) {
+    console.error('draw error', e);
   }
-
-  drawGame(game);
-  requestAnimationFrame(loop);
 }
 
 function drawIdle() {
@@ -178,7 +186,7 @@ function drawIdle() {
 
 // ===== 事件绑定 =====
 
-window.addEventListener('keydown', (e) => {
+function onKeydown(e) {
   if (e.code === 'Space') e.preventDefault();
   const dir = KEYMAP[e.code];
   if (dir) input[dir] = true;
@@ -206,21 +214,32 @@ window.addEventListener('keydown', (e) => {
     } else if (game.state === 'shop') {
       const n = parseInt(e.key, 10);
       if (n >= 1 && n <= 6) onBuy(n - 1);
-      if (e.code === 'KeyR') rerollShop(game), renderShop(game);
+      if (e.code === 'KeyR') { rerollShop(game); renderShop(game); }
       if (e.code === 'Space' || e.code === 'Enter') leaveShop();
     }
   }
-});
+}
 
-window.addEventListener('keyup', (e) => {
+function onKeyup(e) {
   const dir = KEYMAP[e.code];
   if (dir) input[dir] = false;
   if (e.code === 'Tab') showStatsHold = false;
-});
+}
 
+window.addEventListener('keydown', onKeydown);
+window.addEventListener('keyup', onKeyup);
+document.addEventListener('keydown', onKeydown);
+document.addEventListener('keyup', onKeyup);
+canvas.addEventListener('keydown', onKeydown);
+canvas.addEventListener('keyup', onKeyup);
+
+// 失焦只清按键，不自动暂停（预览 iframe 会误触发 blur）
 window.addEventListener('blur', () => {
   input.up = input.down = input.left = input.right = false;
-  if (game && game.state === 'playing' && !paused) togglePause();
+});
+canvas.addEventListener('pointerdown', () => {
+  try { canvas.focus(); } catch (e) { /* ignore */ }
+  Sfx.unlock();
 });
 
 $('btn-start').onclick = () => {
