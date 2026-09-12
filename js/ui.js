@@ -258,13 +258,28 @@ function drawGameInner(g, w, h) {
   ctx.fillStyle = '#141018';
   ctx.fillRect(0, 0, w, h);
 
-  // 地板 + 砖纹
-  ctx.fillStyle = '#1e1826';
-  ctx.fillRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
-  ctx.fillStyle = '#241c2e';
-  for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += 20) {
-    for (let x = ARENA.x + ((y / 20) % 2 === 0 ? 0 : 10); x < ARENA.x + ARENA.w; x += 20) {
-      ctx.fillRect(x, y, 9, 9);
+  // 地板 + 砖纹（优先素材砖）
+  const floorA = getSpriteImg('floor:a');
+  const floorB = getSpriteImg('floor:b');
+  if (floorA && floorA.width) {
+    ctx.imageSmoothingEnabled = false;
+    const ts = 32;
+    for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += ts) {
+      for (let x = ARENA.x; x < ARENA.x + ARENA.w; x += ts) {
+        const tile = ((x / ts + y / ts) | 0) % 2 === 0 ? floorA : (floorB || floorA);
+        ctx.drawImage(tile, x, y, ts, ts);
+      }
+    }
+    ctx.fillStyle = 'rgba(30, 24, 40, 0.55)';
+    ctx.fillRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
+  } else {
+    ctx.fillStyle = '#1e1826';
+    ctx.fillRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
+    ctx.fillStyle = '#241c2e';
+    for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += 20) {
+      for (let x = ARENA.x + ((y / 20) % 2 === 0 ? 0 : 10); x < ARENA.x + ARENA.w; x += 20) {
+        ctx.fillRect(x, y, 9, 9);
+      }
     }
   }
 
@@ -392,33 +407,29 @@ function drawPlayer(p) {
 
   const bob = p.walkT ? Math.sin(p.walkT) * 1.5 : 0;
   const py = y + bob;
+  const size = R * 2.4;
 
-  // 土豆身体（直接绘制，保证可见）
-  ctx.fillStyle = p.color || '#c4a56a';
-  ctx.beginPath();
-  ctx.ellipse(x, py, R * 0.95, R, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 边缘像素块
-  ctx.fillRect(x - R * 0.5, py - R * 0.85, 5, 3);
-  ctx.fillRect(x + R * 0.2, py - R * 0.9, 5, 3);
-  ctx.fillRect(x - R * 0.7, py + R * 0.5, 3, 5);
-  ctx.fillRect(x + R * 0.4, py + R * 0.45, 3, 5);
-
-  // 高光
-  ctx.fillStyle = 'rgba(255,255,255,0.2)';
-  ctx.beginPath();
-  ctx.ellipse(x - R * 0.25, py - R * 0.3, R * 0.4, R * 0.3, -0.4, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 眼睛/嘴
-  ctx.fillStyle = '#2a2030';
-  ctx.fillRect(x - 5, py - 4, 3, 4);
-  ctx.fillRect(x + 2, py - 4, 3, 4);
-  ctx.fillRect(x - 2, py + 3, 4, 2);
-  ctx.fillStyle = 'rgba(200,80,80,0.28)';
-  ctx.fillRect(x - 8, py + 1, 3, 2);
-  ctx.fillRect(x + 5, py + 1, 3, 2);
+  // 优先使用外部素材
+  const charKey = 'char:' + (p.charId || 'well-rounded');
+  if (!drawSpriteImg(ctx, charKey, x, py, size, size)) {
+    // 回退：土豆身体（直接绘制，保证可见）
+    ctx.fillStyle = p.color || '#c4a56a';
+    ctx.beginPath();
+    ctx.ellipse(x, py, R * 0.95, R, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(x - R * 0.5, py - R * 0.85, 5, 3);
+    ctx.fillRect(x + R * 0.2, py - R * 0.9, 5, 3);
+    ctx.fillRect(x - R * 0.7, py + R * 0.5, 3, 5);
+    ctx.fillRect(x + R * 0.4, py + R * 0.45, 3, 5);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x - R * 0.25, py - R * 0.3, R * 0.4, R * 0.3, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2a2030';
+    ctx.fillRect(x - 5, py - 4, 3, 4);
+    ctx.fillRect(x + 2, py - 4, 3, 4);
+    ctx.fillRect(x - 2, py + 3, 4, 2);
+  }
 
   // 武器
   const n = p.weapons.length;
@@ -475,32 +486,36 @@ function drawEnemy(e) {
   ctx.fill();
 
   const col = e.hitFlash > 0 ? '#ffffff' : e.color;
-  ctx.fillStyle = col;
-  if (e.boss) {
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
-      const px = x + Math.cos(a) * r;
-      const py = y + Math.sin(a) * r;
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  const eSize = r * 2.3;
+  let drew = false;
+  if (e.hitFlash <= 0) {
+    drew = drawSpriteImg(ctx, 'enemy:' + (e.type || 'grunt'), x, y, eSize, eSize);
+  }
+  if (!drew) {
+    ctx.fillStyle = col;
+    if (e.boss) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        const px = x + Math.cos(a) * r;
+        const py = y + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.elite) {
+      ctx.beginPath();
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r, y);
+      ctx.lineTo(x, y + r);
+      ctx.lineTo(x - r, y);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
     }
-    ctx.closePath();
-    ctx.fill();
-  } else if (e.elite) {
-    ctx.beginPath();
-    ctx.moveTo(x, y - r);
-    ctx.lineTo(x + r, y);
-    ctx.lineTo(x, y + r);
-    ctx.lineTo(x - r, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.55)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  } else {
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   if (e.boss) {

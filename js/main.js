@@ -285,11 +285,15 @@ $('btn-menu').onclick = () => goMenu();
 $('btn-resume').onclick = () => togglePause();
 $('btn-pause-menu').onclick = () => goMenu();
 
-// 启动：应用 mute 设置
+// 启动：加载素材 + mute 设置
 (function boot() {
   const s = loadSettings();
-  if (s.mute) Sfx.toggle(); // 关
+  if (s.mute) Sfx.toggle();
   drawIdle();
   show('menu');
+  // 异步加载像素素材，失败则回退几何绘制
+  if (typeof loadSpriteAssets === 'function') {
+    loadSpriteAssets().catch(() => { /* keep fallback drawing */ });
+  }
   requestAnimationFrame(loop);
 })();

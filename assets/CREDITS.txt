@@ -1,0 +1,5 @@
+# Kenney assets (CC0)
+# https://kenney.nl — Tiny Dungeon, Tiny Battle
+# AI-generated potato character sheet (internal use)
+
+See assets/tiny-dungeon/License.txt and assets/tiny-battle/License.txt (Creative Commons CC0).
