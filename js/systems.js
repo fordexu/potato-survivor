@@ -118,8 +118,9 @@ function updatePlaying(g, dt, input) {
   updatePickups(g, dt);
   updateFx(g, dt);
 
-  // 波次结束
-  if (g.waveTime <= 0 && g.enemies.length === 0 && g.spawned >= (g.waveConfig?.count || 0)) {
+  // 波次结束：全部刷完且清空敌人立刻结算，不必等倒计时
+  const allSpawned = !g.waveConfig || g.spawned >= (g.waveConfig.count || 0);
+  if (allSpawned && g.enemies.length === 0) {
     for (const item of g.pickups) {
       if (item.kind === 'mat') p.materials += item.value;
       else if (item.kind === 'xp') addXp(g, item.value, true);

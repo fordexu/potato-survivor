@@ -102,8 +102,15 @@ function renderHud(g) {
   $('wave-label').textContent = `波次 ${g.wave}`;
   const t = Math.max(0, Math.ceil(g.waveTime));
   const tl = $('timer-label');
-  tl.textContent = g.waveConfig && g.spawned < g.waveConfig.count ? `${t}s` : `清剿中 ${t}s`;
-  tl.style.color = t <= 10 ? '#e85a5a' : '';
+  const remainingSpawn = g.waveConfig ? Math.max(0, g.waveConfig.count - g.spawned) : 0;
+  if (remainingSpawn > 0) {
+    tl.textContent = `${t}s · 待刷${remainingSpawn}`;
+  } else if (g.enemies.length > 0) {
+    tl.textContent = `清剿 ${g.enemies.length}`;
+  } else {
+    tl.textContent = '已清空';
+  }
+  tl.style.color = t <= 10 && remainingSpawn > 0 ? '#e85a5a' : '';
   $('mat-count').textContent = p.materials;
   const xpPct = p.xp / p.xpNeed * 100;
   $('xp-bar').style.width = xpPct + '%';
