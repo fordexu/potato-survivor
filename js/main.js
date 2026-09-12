@@ -12,6 +12,15 @@ const input = {
   up: false, down: false, left: false, right: false, dash: false,
 };
 
+const mouse = {
+  x: 0, y: 0, down: false,
+};
+
+function mouseToWorld(mx, my) {
+  const cam = (game && game.camera) || { x: 0, y: 0 };
+  return { x: mx + cam.x, y: my + cam.y };
+}
+
 const KEYMAP = {
   KeyW: 'up', ArrowUp: 'up',
   KeyS: 'down', ArrowDown: 'down',
@@ -137,6 +146,13 @@ function loop(ts) {
   lastTs = ts;
 
   if (!paused && game.state === 'playing') {
+    // 同步鼠标瞄准到游戏输入
+    const world = mouseToWorld(mouse.x, mouse.y);
+    game.input = {
+      aimHeld: mouse.down,
+      aimX: world.x,
+      aimY: world.y,
+    };
     try {
       updatePlaying(game, dt, input);
     } catch (e) {
@@ -252,6 +268,28 @@ canvas.addEventListener('pointerdown', () => {
   try { canvas.focus(); } catch (e) { /* ignore */ }
   Sfx.unlock();
 });
+
+function updateMouseFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const sx = canvas.width / rect.width;
+  const sy = canvas.height / rect.height;
+  mouse.x = (e.clientX - rect.left) * sx;
+  mouse.y = (e.clientY - rect.top) * sy;
+}
+
+canvas.addEventListener('pointermove', updateMouseFromEvent);
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button === 0) {
+    mouse.down = true;
+    updateMouseFromEvent(e);
+  }
+});
+window.addEventListener('pointerup', (e) => {
+  if (e.button === 0) mouse.down = false;
+});
+canvas.addEventListener('pointerleave', () => { mouse.down = false; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 $('btn-start').onclick = () => {
   Sfx.unlock();

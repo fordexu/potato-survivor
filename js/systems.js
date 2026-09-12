@@ -256,40 +256,72 @@ function updateWeapons(g, dt) {
   const asMul = 1 + p.stats.attackSpeed / 100;
   const rangeMul = 1 + p.stats.range / 100;
   const n = p.weapons.length;
+  const manual = !!(g.input && g.input.aimHeld && g.input.aimX != null);
+  const aimWx = g.input ? g.input.aimX : 0;
+  const aimWy = g.input ? g.input.aimY : 0;
+
   for (let i = 0; i < n; i++) {
     const w = p.weapons[i];
     const baseAngle = (i / Math.max(1, n)) * Math.PI * 2;
     w.angle = baseAngle;
     if (w.recoil > 0) w.recoil = Math.max(0, w.recoil - dt * 6);
 
-    let target = null;
-    let best = Infinity;
     const wx = p.x + Math.cos(baseAngle) * 18;
     const wy = p.y + Math.sin(baseAngle) * 10;
     const range = w.def.range * rangeMul * (1 + (w.level - 1) * 0.08);
-    for (const e of g.enemies) {
-      if (e.spawnAnim > 0) continue;
-      const d = dist({ x: wx, y: wy }, e);
-      if (d < best && d < range) { best = d; target = e; }
+
+    let target = null;
+    let aim = null;
+
+    if (manual) {
+      // 左键按住：优先打鼠标附近敌人，否则朝鼠标方向空放
+      let bestMouse = 70;
+      for (const e of g.enemies) {
+        if (e.dead || e.spawnAnim > 0) continue;
+        const dm = dist({ x: aimWx, y: aimWy }, e);
+        const dw = dist({ x: wx, y: wy }, e);
+        if (dm < bestMouse + e.r && dw < range) {
+          bestMouse = dm;
+          target = e;
+        }
+      }
+      if (target) {
+        aim = Math.atan2(target.y - wy, target.x - wx);
+      } else {
+        aim = Math.atan2(aimWy - wy, aimWx - wx);
+      }
+      p.facing = Math.atan2(aimWy - p.y, aimWx - p.x);
+    } else {
+      // 默认自动：最近敌人
+      let best = Infinity;
+      for (const e of g.enemies) {
+        if (e.dead || e.spawnAnim > 0) continue;
+        const d = dist({ x: wx, y: wy }, e);
+        if (d < best && d < range) { best = d; target = e; }
+      }
+      if (target) aim = Math.atan2(target.y - wy, target.x - wx);
     }
 
     w.cd -= dt * asMul;
     if (w.fireAnim > 0) w.fireAnim -= dt * 4;
 
-    if (target) {
-      const aim = Math.atan2(target.y - wy, target.x - wx);
-      // 平滑转向
+    if (aim != null) {
       let da = aim - w.aimAngle;
       while (da > Math.PI) da -= Math.PI * 2;
       while (da < -Math.PI) da += Math.PI * 2;
-      w.aimAngle += da * Math.min(1, dt * 10);
+      w.aimAngle += da * Math.min(1, dt * 12);
     }
 
-    if (target && w.cd <= 0) {
+    const canFire = manual
+      ? (aim != null && (!w.def.melee || target))
+      : !!target;
+
+    if (canFire && w.cd <= 0) {
       w.cd = w.def.cooldown * (1 + (w.level - 1) * 0.04);
       w.fireAnim = 1;
       w.recoil = 1;
-      fireWeapon(g, w, wx, wy, target, rangeMul);
+      const fakeTarget = target || { x: wx + Math.cos(aim) * range, y: wy + Math.sin(aim) * range, r: 1 };
+      fireWeapon(g, w, wx, wy, fakeTarget, rangeMul, aim);
     }
   }
 }
@@ -306,10 +338,12 @@ function rollDamage(g, base) {
   return { dmg, crit };
 }
 
-function fireWeapon(g, w, wx, wy, target, rangeMul) {
+function fireWeapon(g, w, wx, wy, target, rangeMul, aimOverride) {
   const def = w.def;
   const levelMul = 1 + (w.level - 1) * 0.25;
-  const aim = Math.atan2(target.y - wy, target.x - wx);
+  const aim = aimOverride != null
+    ? aimOverride
+    : Math.atan2(target.y - wy, target.x - wx);
   w.aimAngle = aim;
   Sfx.shoot(def.id);
 

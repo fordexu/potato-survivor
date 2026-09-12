@@ -452,6 +452,22 @@ function drawGameInner(g, w, h) {
   // 小地图
   drawMinimap(g, w, h);
 
+  // 手动瞄准准星
+  if (g.input && g.input.aimHeld && g.input.aimX != null) {
+    const cam = g.camera || { x: 0, y: 0 };
+    const mx = g.input.aimX - cam.x;
+    const my = g.input.aimY - cam.y;
+    ctx.strokeStyle = 'rgba(154,208,255,.85)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(mx, my, 10, 0, Math.PI * 2);
+    ctx.moveTo(mx - 14, my); ctx.lineTo(mx - 4, my);
+    ctx.moveTo(mx + 4, my); ctx.lineTo(mx + 14, my);
+    ctx.moveTo(mx, my - 14); ctx.lineTo(mx, my - 4);
+    ctx.moveTo(mx, my + 4); ctx.lineTo(mx, my + 14);
+    ctx.stroke();
+  }
+
   ctx.restore();
 }
 
