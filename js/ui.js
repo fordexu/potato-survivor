@@ -259,7 +259,7 @@ function drawGameInner(g, w, h) {
   ctx.strokeRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
 
   // 暗角
-  const vg = ctx.createRadialGradient(w / 2, h / 2, 180, w / 2, h / 2, 520);
+  const vg = ctx.createRadialGradient(w / 2, h / 2, 240, w / 2, h / 2, Math.max(w, h) * 0.72);
   vg.addColorStop(0, 'rgba(0,0,0,0)');
   vg.addColorStop(1, 'rgba(0,0,0,0.35)');
   ctx.fillStyle = vg;

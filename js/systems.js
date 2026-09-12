@@ -1,9 +1,16 @@
 // ===== 游戏系统 =====
 
-const ARENA = { x: 40, y: 30, w: 880, h: 480 };
+const ARENA = { x: 40, y: 40, w: 1200, h: 640 };
+
+function arenaCenter() {
+  return { x: ARENA.x + ARENA.w / 2, y: ARENA.y + ARENA.h / 2 };
+}
 
 function createGame(char, seed = Date.now()) {
   const player = makePlayer(char);
+  const c = arenaCenter();
+  player.x = c.x;
+  player.y = c.y;
   for (const wid of char.startWeapons) {
     player.weapons.push(makeWeapon(WEAPONS[wid]));
   }
@@ -512,7 +519,7 @@ function updateBullets(g, dt) {
 
 function updatePickups(g, dt) {
   const p = g.player;
-  const pickupR = 100 * (1 + p.stats.pickupRange / 100);
+  const pickupR = 120 * (1 + p.stats.pickupRange / 100);
   for (const item of g.pickups) {
     item.bob += dt * 4;
     const d = dist(item, p);

@@ -176,7 +176,7 @@ function drawIdle() {
   const cx = w / 2, cy = h / 2 + 40;
   ctx.fillStyle = '#c4a56a';
   ctx.beginPath();
-  ctx.ellipse(cx, cy, 36, 38, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, 40, 42, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#2a2030';
   ctx.fillRect(cx - 12, cy - 8, 6, 8);
