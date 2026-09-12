@@ -226,7 +226,7 @@ function updatePlaying(g, dt, input) {
       else if (item.kind === 'heal') p.hp = Math.min(p.stats.maxHp, p.hp + item.value);
     }
     g.pickups.length = 0;
-    const bonus = Math.round(3 + g.wave * 2 + p.stats.harvesting * 0.2);
+    const bonus = Math.round(5 + g.wave * 3 + p.stats.harvesting * 0.25);
     p.materials += bonus;
     g.floats.push(makeFloatText(p.x, p.y - 28, `波次奖励 +${bonus}◈`, '#e8a838', 14));
     if (g.wave >= 20) {
@@ -401,11 +401,14 @@ function damageEnemy(g, e, dmg, crit, angle = 0, kb = 0) {
     const luckBonus = p.stats.luck / 100;
     const matMulD = (g.difficulty && g.difficulty.matMul) || 1;
     const xpMulD = (g.difficulty && g.difficulty.xpMul) || 1;
-    // 掉落物夹在场地内，保证能捡到
     const drop = clampToArena(e.x, e.y, 12);
-    if (g.rng() < 0.9 + luckBonus * 0.08) {
-      const matVal = Math.max(1, Math.round(e.mat * (1 + p.stats.harvesting / 100) * matMulD));
-      g.pickups.push(makePickup(drop.x, drop.y, 'mat', matVal));
+    // 必掉材料，数值整体上调
+    const matVal = Math.max(1, Math.round((e.mat * 1.6 + 1) * (1 + p.stats.harvesting / 100) * matMulD));
+    g.pickups.push(makePickup(drop.x, drop.y, 'mat', matVal));
+    // 小概率额外一包
+    if (g.rng() < 0.25 + luckBonus * 0.2) {
+      const extra = clampToArena(drop.x + 10, drop.y + 4, 12);
+      g.pickups.push(makePickup(extra.x, extra.y, 'mat', Math.max(1, Math.round(matVal * 0.5))));
     }
     // 赏金令
     const bounty = p.passives.bounty || 0;
@@ -416,7 +419,7 @@ function damageEnemy(g, e, dmg, crit, angle = 0, kb = 0) {
     }
     const xdrop = clampToArena(drop.x + (g.rng() - 0.5) * 10, drop.y + (g.rng() - 0.5) * 10, 12);
     g.pickups.push(makePickup(xdrop.x, xdrop.y, 'xp', Math.max(1, Math.round(e.xp * xpMulD))));
-    if (g.rng() < 0.03 + luckBonus * 0.05) {
+    if (g.rng() < 0.04 + luckBonus * 0.06) {
       g.pickups.push(makePickup(drop.x, drop.y, 'heal', 2));
     }
     for (let i = 0; i < (e.boss ? 20 : e.elite ? 12 : 8); i++) {
@@ -755,7 +758,7 @@ function rollShopItem(g) {
       icon: def.icon,
       desc: def.desc + (hint ? `\n${hint}` : ''),
       rarity,
-      price: Math.round(def.price * (1 + (g.wave - 1) * 0.06)),
+      price: Math.round(def.price * (1 + (g.wave - 1) * 0.04)),
       weapon: def,
       owned,
       locked: false,
@@ -800,7 +803,7 @@ function rollShopItem(g) {
     icon: ps.icon,
     desc: ps.desc,
     rarity: ps.rarity,
-    price: Math.round(ps.price * (1 + (g.wave - 1) * 0.06)),
+    price: Math.round(ps.price * (1 + (g.wave - 1) * 0.04)),
     passive: ps,
     locked: false,
     sold: false,

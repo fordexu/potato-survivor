@@ -13,7 +13,7 @@ const DIFFICULTIES = [
     enemyCount: 0.85,
     matMul: 1.35,
     xpMul: 1.2,
-    startBonus: 15,
+    startBonus: 25,
     playerDmgMul: 1.1,
   },
   {
@@ -28,7 +28,7 @@ const DIFFICULTIES = [
     enemyCount: 1,
     matMul: 1,
     xpMul: 1,
-    startBonus: 5,
+    startBonus: 12,
     playerDmgMul: 1,
   },
   {
@@ -43,7 +43,7 @@ const DIFFICULTIES = [
     enemyCount: 1.2,
     matMul: 0.9,
     xpMul: 1,
-    startBonus: 0,
+    startBonus: 5,
     playerDmgMul: 1,
   },
   {
@@ -58,7 +58,7 @@ const DIFFICULTIES = [
     enemyCount: 1.45,
     matMul: 1.15,
     xpMul: 1.15,
-    startBonus: 0,
+    startBonus: 8,
     playerDmgMul: 1,
   },
 ];
@@ -274,15 +274,15 @@ const PASSIVES = [
 const ENEMY_TYPES = {
   runner: {
     id: 'runner', name: '疾行者', hp: 8, speed: 95, damage: 4, radius: 8,
-    color: '#e86a6a', xp: 1, mat: 1, touchDamage: true,
+    color: '#e86a6a', xp: 1, mat: 2, touchDamage: true,
   },
   grunt: {
     id: 'grunt', name: '步兵', hp: 16, speed: 55, damage: 6, radius: 10,
-    color: '#c06060', xp: 2, mat: 1, touchDamage: true,
+    color: '#c06060', xp: 2, mat: 2, touchDamage: true,
   },
   tank: {
     id: 'tank', name: '重装', hp: 48, speed: 32, damage: 12, radius: 14,
-    color: '#8a5050', xp: 4, mat: 2, touchDamage: true,
+    color: '#8a5050', xp: 4, mat: 4, touchDamage: true,
   },
   shooter: {
     id: 'shooter', name: '射手', hp: 12, speed: 40, damage: 5, radius: 9,
