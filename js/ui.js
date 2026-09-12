@@ -84,7 +84,7 @@ function renderShop(g) {
   const nextWave = g.wave + 1;
   const ncfg = getWaveConfig(Math.min(nextWave, 20));
   const types = [...new Set(ncfg.pool)].map(t => ENEMY_TYPES[t]).filter(Boolean);
-  $('wave-preview').innerHTML = `下一波：${types.map(t => `<span class="wp-chip" title="${t.name}">${t.name}</span>`).join('')}<span class="lock-hint">Shift+数字锁定 · 重铸时保留</span>`;
+  $('wave-preview').innerHTML = `下一波：${types.map(t => `<span class="wp-chip" title="${t.name}">${t.name}</span>`).join('')}<span class="lock-hint">锁定后重铸/下一波都会保留</span>`;
 
   const grid = $('shop-items');
   grid.innerHTML = '';

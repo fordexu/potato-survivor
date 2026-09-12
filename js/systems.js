@@ -759,19 +759,18 @@ function rollShopItem(g) {
   };
 }
 
-function generateShop(g, keepLockedFrom) {
+function generateShop(g, _unused) {
   const p = g.player;
   const slots = 4 + (g.rng() < 0.3 + p.stats.luck / 200 ? 1 : 0);
   const items = [];
-  const keep = keepLockedFrom || [];
-  // 先保留锁定且未购买的商品
-  for (const old of keep) {
+  // 锁定且未购买的商品跨「重铸」和「下一波」都保留
+  const prev = g.shopItems || [];
+  for (const old of prev) {
     if (old && old.locked && !old.sold) items.push(old);
   }
   while (items.length < slots) items.push(rollShopItem(g));
-  // 若锁定过多，截断到槽位数
-  g.shopItems = items.slice(0, Math.max(slots, items.length));
-  if (!keepLockedFrom) g.rerollCost = 5 + g.wave;
+  g.shopItems = items;
+  g.rerollCost = 5 + g.wave;
 }
 
 function toggleShopLock(g, idx) {
