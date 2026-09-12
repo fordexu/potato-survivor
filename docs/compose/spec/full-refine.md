@@ -1,14 +1,23 @@
 ---
 feature: full-refine
-status: in-progress
+status: delivered
 updated: 2026-09-12
 branch: polish/full-refine
-commits: a9b08e7..<head>
+commits: a9b08e7..bb3d1c6
 ---
 
 # 全面打磨 Full Refine
 
 ## Report
+
+**What was built** — 在初版可玩基础上完成全面打磨：像素 sprite 预渲染、武器瞄准/后坐/muzzle flash、命中 hit-stop 与连杀音调；Tab 属性面板、Esc 暂停、帮助层；角色卡展示初始武器与属性，并新增僵尸（复活）与赌徒（高暴击）；4 种被动道具与商店持有提示、下一波预览；Boss 血条与登场演出；平衡曲线（奖励/经验/缩放/磁吸/价格）；mute 与上次角色 localStorage 持久化。
+
+**Verification** — `node -c` 全部 js 文件 PASS；逻辑冒烟：僵尸复活 PASS、波次结算进商店 PASS、商店购买武器/被动 PASS、波次 20 Boss 警告 PASS、属性面板 HTML 生成 PASS。
+
+**Journey log**
+1. worktree 创建被环境隔离策略拦截，改为在当前目录 `polish/full-refine` 分支实施。
+2. 复活原先只挂在 `updatePlaying` 末尾，直接 `damagePlayer` 不会触发；已移入 `damagePlayer`。
+3. 波次结束自动结算掉落时若调用 `addXp` 会中途打开升级 UI；改为 `silent` 后再按优先级进入升级/商店。
 
 ## [S1] Problem
 初版《土豆幸存者》核心循环可玩，但相对「土豆兄弟」级精细度不足：
