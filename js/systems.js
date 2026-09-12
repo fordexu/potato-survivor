@@ -207,8 +207,9 @@ function updatePlaying(g, dt, input) {
   updateCamera(g, dt);
 
   // 波次结束：全部刷完且清空敌人立刻结算，不必等倒计时
+  const living = g.enemies.filter(e => !e.dead).length;
   const allSpawned = !g.waveConfig || g.spawned >= (g.waveConfig.count || 0);
-  if (allSpawned && g.enemies.length === 0) {
+  if (allSpawned && living === 0) {
     for (const item of g.pickups) {
       if (item.kind === 'mat') p.materials += item.value;
       else if (item.kind === 'xp') addXp(g, item.value, true);
@@ -367,6 +368,7 @@ function damageEnemy(g, e, dmg, crit, angle = 0, kb = 0) {
 
   if (e.hp <= 0) {
     e.dead = true;
+    e.dying = e.boss ? 0.55 : 0.32;
     const p = g.player;
     p.kills++;
     p.killStreak++;
@@ -456,7 +458,15 @@ function damagePlayer(g, amount) {
 function updateEnemies(g, dt) {
   const p = g.player;
   for (const e of g.enemies) {
-    if (e.dead) continue;
+    if (e.dead) {
+      if (e.dying > 0) e.dying = Math.max(0, e.dying - dt);
+      continue;
+    }
+    e.animT += dt * 8;
+    e.idleT += dt;
+    if (e.windup > 0) e.windup = Math.max(0, e.windup - dt);
+    if (e.lunge > 0) e.lunge = Math.max(0, e.lunge - dt * 4);
+    if (e.squash > 0) e.squash = Math.max(0, e.squash - dt * 5);
     if (e.spawnAnim > 0) {
       e.spawnAnim -= dt;
       continue;
@@ -473,34 +483,36 @@ function updateEnemies(g, dt) {
     const dx = p.x - e.x;
     const dy = p.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
+    let mvx = 0, mvy = 0;
 
     // 射手保持距离
     if (e.shootRange && !e.boss) {
       e.shootTimer -= dt;
       const ideal = e.shootRange * 0.7;
       if (d > ideal + 20) {
-        e.x += (dx / d) * e.speed * dt;
-        e.y += (dy / d) * e.speed * dt;
+        mvx = dx / d; mvy = dy / d;
       } else if (d < ideal - 30) {
-        e.x -= (dx / d) * e.speed * 0.7 * dt;
-        e.y -= (dy / d) * e.speed * 0.7 * dt;
+        mvx = -dx / d * 0.7; mvy = -dy / d * 0.7;
       } else {
-        // 侧移
-        e.x += (-dy / d) * e.speed * 0.4 * dt;
-        e.y += (dx / d) * e.speed * 0.4 * dt;
+        mvx = -dy / d * 0.4; mvy = dx / d * 0.4;
       }
+      // 开火前摇
+      if (e.shootTimer < 0.35 && e.shootTimer > 0 && d < e.shootRange) e.windup = e.shootTimer;
       if (e.shootTimer <= 0 && d < e.shootRange) {
         e.shootTimer = e.shootCooldown;
+        e.squash = 1;
         const a = Math.atan2(dy, dx);
         g.bullets.push(makeEnemyBullet(e.x, e.y, Math.cos(a) * e.bulletSpeed, Math.sin(a) * e.bulletSpeed, e.damage, { color: e.color }));
       }
     } else if (e.boss) {
-      // BOSS：追击 + 周期弹幕
-      e.x += (dx / d) * e.speed * dt;
-      e.y += (dy / d) * e.speed * dt;
+      mvx = dx / d; mvy = dy / d;
       e.shootTimer -= dt;
+      if (e.shootTimer < 0.5 && e.shootTimer > 0) e.windup = e.shootTimer;
       if (e.shootTimer <= 0) {
         e.shootTimer = e.shootCooldown;
+        e.squash = 1.2;
+        e.lunge = 1;
+        g.shake = Math.max(g.shake, 8);
         const base = Math.atan2(dy, dx);
         for (let i = 0; i < 8; i++) {
           const a = base + (i / 8) * Math.PI * 2;
@@ -508,20 +520,29 @@ function updateEnemies(g, dt) {
         }
       }
     } else {
-      e.x += (dx / d) * e.speed * dt;
-      e.y += (dy / d) * e.speed * dt;
+      mvx = dx / d; mvy = dy / d;
+      // 疾行者偶尔小跳
+      if (e.type === 'runner' && e.lunge <= 0 && g.rng() < dt * 0.8) {
+        e.lunge = 0.6;
+      }
     }
 
-    // 保持在场地附近
+    const moveMul = 1 + (e.lunge > 0 ? 0.55 : 0);
+    e.x += mvx * e.speed * moveMul * dt;
+    e.y += mvy * e.speed * moveMul * dt;
+    if (mvx || mvy) {
+      e.faceX = mvx;
+      e.faceY = mvy;
+      e.animT += dt * 4 * (moveMul - 0.5);
+    }
+
     e.x = clamp(e.x, ARENA.x + e.r, ARENA.x + ARENA.w - e.r);
     e.y = clamp(e.y, ARENA.y + e.r, ARENA.y + ARENA.h - e.r);
 
-    // 碰撞玩家
     if (e.touchDamage && dist(e, p) < e.r + p.r) {
       damagePlayer(g, e.damage);
     }
 
-    // 敌人之间简单分离
     for (const o of g.enemies) {
       if (o === e || o.dead) continue;
       const ddx = e.x - o.x;
@@ -535,7 +556,8 @@ function updateEnemies(g, dt) {
       }
     }
   }
-  g.enemies = g.enemies.filter(e => !e.dead);
+  // 保留死亡动画一段时间再移除
+  g.enemies = g.enemies.filter(e => !e.dead || e.dying > 0);
 }
 
 function updateBullets(g, dt) {

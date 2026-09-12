@@ -368,7 +368,7 @@ function drawGameInner(g, w, h) {
 
   for (const e of g.enemies) {
     if (e.x < viewX0 - 40 || e.x > viewX1 + 40 || e.y < viewY0 - 40 || e.y > viewY1 + 40) continue;
-    drawEnemy(e);
+    drawEnemy(e, g);
   }
   drawPlayer(g.player);
 
@@ -479,15 +479,23 @@ function drawPlayer(p) {
   if (p.invuln > 0 && Math.floor(p.invuln * 12) % 2 === 0) ctx.globalAlpha = 0.45;
 
   const bob = p.walkT ? Math.sin(p.walkT) * 1.5 : 0;
-  const py = y + bob;
+  p.idleT = (p.idleT || 0) + 0.016;
+  const breathe = Math.sin(p.idleT * 2.2) * 0.8;
+  const py = y + bob + (p.moveX || p.moveY ? 0 : breathe * 0.3);
   let size = R * 2.4;
-  // 冲刺拉伸 / 走路挤压
   let sx = 1, sy = 1;
   if (p.dashTime > 0) {
     sx = 1.25; sy = 0.85;
   } else if (p.moveX || p.moveY) {
     sx = 1 + Math.sin(p.walkT * 2) * 0.06;
     sy = 1 - Math.sin(p.walkT * 2) * 0.06;
+  } else {
+    sx = 1 + breathe * 0.02;
+    sy = 1 - breathe * 0.02;
+  }
+  // 受击后仰
+  if (p.invuln > 0 && p.invuln < 0.45) {
+    sx *= 1.08; sy *= 0.94;
   }
   const dw = size * sx;
   const dh = size * sy;
@@ -533,19 +541,22 @@ function drawPlayer(p) {
     const orbit = w.angle || 0;
     const ox = x + Math.cos(orbit) * (R + 10);
     const oy = py + Math.sin(orbit) * (R + 7);
-    const rec = (w.recoil || 0) * 4;
+    const rec = (w.recoil || 0) * 5;
+    // 开火时武器微旋
+    const kickRot = (w.fireAnim > 0 ? -0.15 * w.fireAnim : 0) + Math.sin(p.walkT + i) * 0.03;
     const kx = ox - Math.cos(aim) * rec;
     const ky = oy - Math.sin(aim) * rec;
     ctx.save();
     ctx.translate(kx, ky);
-    ctx.rotate(aim);
+    ctx.rotate(aim + kickRot);
     ctx.fillStyle = (w.def && w.def.color) || '#e8d4a0';
     ctx.fillRect(-3, -3, 10, 6);
     ctx.fillStyle = '#1a1420';
     ctx.fillRect(4, -1, 4, 2);
     if (w.fireAnim > 0) {
       ctx.fillStyle = '#fff8d0';
-      ctx.fillRect(9, -2, 5, 4);
+      const fz = 4 + w.fireAnim * 6;
+      ctx.fillRect(9, -fz / 2, fz, fz);
     }
     ctx.restore();
   }
@@ -560,66 +571,100 @@ function drawPlayer(p) {
   ctx.restore();
 }
 
-function drawEnemy(e) {
+function drawEnemy(e, g) {
   const { x, y, r } = e;
+
+  // 出生：从地面升起 + 扩散环
   if (e.spawnAnim > 0) {
     const t = 1 - e.spawnAnim / 0.45;
-    ctx.globalAlpha = t * 0.8;
+    ctx.globalAlpha = Math.min(1, t * 1.4);
+    const rise = (1 - t) * 18;
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + r * 0.6, r * 0.9 * t, r * 0.3 * t, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.translate(x, y - rise);
+    ctx.scale(0.4 + t * 0.6, 0.4 + t * 0.6);
+    drawEnemyBody(e, 0);
+    ctx.restore();
     ctx.strokeStyle = e.color;
     ctx.lineWidth = 2;
+    ctx.globalAlpha = (1 - t) * 0.8;
     ctx.beginPath();
-    ctx.arc(x, y, r + (1 - t) * 20, 0, Math.PI * 2);
+    ctx.arc(x, y, r + (1 - t) * 24, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
     return;
   }
 
+  // 死亡：压扁淡出
+  if (e.dead && e.dying > 0) {
+    const t = e.dying / (e.boss ? 0.55 : 0.32);
+    ctx.save();
+    ctx.globalAlpha = t;
+    ctx.translate(x, y);
+    ctx.scale(1 + (1 - t) * 0.4, Math.max(0.15, t));
+    drawEnemyBody(e, 0);
+    ctx.restore();
+    return;
+  }
+  if (e.dead) return;
+
+  // 影子（受击/跳跃时缩小）
+  const air = e.lunge > 0 ? Math.sin(e.lunge * Math.PI) * 6 : 0;
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath();
-  ctx.ellipse(x, y + r * 0.7, r * 0.85, r * 0.3, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y + r * 0.7, r * 0.85 - air * 0.2, r * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const col = e.hitFlash > 0 ? '#ffffff' : e.color;
-  const eSize = r * 2.3;
-  let drew = false;
-  if (e.hitFlash <= 0) {
-    drew = drawSpriteImg(ctx, 'enemy:' + (e.type || 'grunt'), x, y, eSize, eSize);
+  // 走路起伏 / 受击挤压 / 开火前摇鼓包
+  const walk = Math.sin(e.animT) * (e.type === 'runner' || e.type === 'swarm' ? 2.2 : 1.2);
+  let sx = 1, sy = 1, rot = 0;
+  if (e.hitFlash > 0) { sx = 1.15; sy = 0.9; }
+  if (e.squash > 0) {
+    const s = e.squash;
+    sx *= 1 + s * 0.18;
+    sy *= 1 - s * 0.12;
   }
-  if (!drew) {
-    ctx.fillStyle = col;
-    if (e.boss) {
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
-        const px = x + Math.cos(a) * r;
-        const py = y + Math.sin(a) * r;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-    } else if (e.elite) {
-      ctx.beginPath();
-      ctx.moveTo(x, y - r);
-      ctx.lineTo(x + r, y);
-      ctx.lineTo(x, y + r);
-      ctx.lineTo(x - r, y);
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  if (e.windup > 0.05) {
+    const w = e.windup / 0.35;
+    sx *= 1 + w * 0.12;
+    sy *= 1 + w * 0.12;
+  }
+  if (e.lunge > 0) {
+    sx *= 1.12; sy *= 0.92;
+    rot = Math.atan2(e.faceY, e.faceX) * 0.08;
+  }
+  // 虫群抖动
+  if (e.type === 'swarm') rot += Math.sin(e.animT * 3) * 0.15;
+
+  const flip = e.faceX < -0.2 ? -1 : 1;
+  ctx.save();
+  ctx.translate(x, y - air + walk);
+  ctx.rotate(rot);
+  ctx.scale(flip * sx, sy);
+  drawEnemyBody(e, e.animT);
+  ctx.restore();
+
+  // 开火前摇红圈
+  if (e.windup > 0.05) {
+    ctx.strokeStyle = `rgba(255,80,80,${0.3 + e.windup})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 4 + e.windup * 6, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
+  // Boss 王冠
   if (e.boss) {
     ctx.fillStyle = '#e8a838';
-    ctx.fillRect(x - 10, y - r - 6, 20, 6);
-    ctx.fillRect(x - 10, y - r - 10, 4, 5);
-    ctx.fillRect(x - 2, y - r - 12, 4, 7);
-    ctx.fillRect(x + 6, y - r - 10, 4, 5);
+    ctx.fillRect(x - 10, y - r - 6 - air, 20, 6);
+    ctx.fillRect(x - 10, y - r - 10 - air, 4, 5);
+    ctx.fillRect(x - 2, y - r - 12 - air, 4, 7);
+    ctx.fillRect(x + 6, y - r - 10 - air, 4, 5);
   } else if (e.elite) {
-    ctx.strokeStyle = 'rgba(255,255,255,.5)';
+    ctx.strokeStyle = `rgba(232,168,56,${0.4 + Math.sin(e.animT) * 0.2})`;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x - r - 2, y - r - 2, (r + 2) * 2, (r + 2) * 2);
   }
@@ -627,8 +672,76 @@ function drawEnemy(e) {
   if (!e.boss && e.hp < e.maxHp) {
     const bw = r * 2;
     ctx.fillStyle = '#000';
-    ctx.fillRect(x - bw / 2, y - r - 8, bw, 3);
+    ctx.fillRect(x - bw / 2, y - r - 10 - air, bw, 3);
     ctx.fillStyle = '#e85a5a';
-    ctx.fillRect(x - bw / 2, y - r - 8, bw * Math.max(0, e.hp / e.maxHp), 3);
+    ctx.fillRect(x - bw / 2, y - r - 10 - air, bw * Math.max(0, e.hp / e.maxHp), 3);
+  }
+}
+
+function drawEnemyBody(e, animT) {
+  const r = e.r;
+  const col = e.hitFlash > 0 ? '#ffffff' : e.color;
+  const eSize = r * 2.3;
+
+  if (e.hitFlash <= 0 && drawSpriteImg(ctx, 'enemy:' + (e.type || 'grunt'), 0, 0, eSize, eSize)) {
+    return;
+  }
+
+  ctx.fillStyle = col;
+  if (e.boss) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (e.elite) {
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r, 0);
+    ctx.closePath();
+    ctx.fill();
+  } else if (e.type === 'runner' || e.type === 'swarm') {
+    // 尖耳朵/翅膀感
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.95, r * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.6, -r * 0.3);
+    ctx.lineTo(-r * 1.1, -r * 0.9);
+    ctx.lineTo(-r * 0.2, -r * 0.5);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(r * 0.6, -r * 0.3);
+    ctx.lineTo(r * 1.1, -r * 0.9);
+    ctx.lineTo(r * 0.2, -r * 0.5);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 眼睛（受击变 X）
+  if (e.hitFlash > 0) {
+    ctx.strokeStyle = '#1a1018';
+    ctx.lineWidth = 1.5;
+    const s = r * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.35 - s, -s); ctx.lineTo(-r * 0.35 + s, s);
+    ctx.moveTo(-r * 0.35 + s, -s); ctx.lineTo(-r * 0.35 - s, s);
+    ctx.moveTo(r * 0.1 - s, -s); ctx.lineTo(r * 0.1 + s, s);
+    ctx.moveTo(r * 0.1 + s, -s); ctx.lineTo(r * 0.1 - s, s);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = '#1a1018';
+    ctx.fillRect(-r * 0.35, -r * 0.12, r * 0.22, r * 0.28);
+    ctx.fillRect(r * 0.12, -r * 0.12, r * 0.22, r * 0.28);
+    // 高光
+    ctx.fillStyle = 'rgba(255,255,255,.2)';
+    ctx.fillRect(-r * 0.45, -r * 0.45, r * 0.3, r * 0.2);
   }
 }

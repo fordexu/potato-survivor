@@ -59,6 +59,8 @@ function makePlayer(char) {
     dashVy: 0,
     moveX: 0,
     moveY: 0,
+    hurtLean: 0,
+    idleT: 0,
   };
 }
 
@@ -100,10 +102,17 @@ function makeEnemy(typeId, x, y, scale = 1) {
     elite: typeId === 'elite',
     hitFlash: 0,
     dead: false,
+    dying: 0,
     vx: 0,
     vy: 0,
     kb: 0,
     spawnAnim: 0.45,
+    animT: Math.random() * 10,
+    faceX: 0,
+    faceY: 1,
+    windup: 0,
+    lunge: 0,
+    squash: 0,
   };
 }
 
