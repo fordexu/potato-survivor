@@ -366,6 +366,23 @@ function drawGameInner(g, w, h) {
     ctx.globalAlpha = 1;
   }
 
+  // 冲刺残影
+  if (g.ghosts) {
+    for (const gh of g.ghosts) {
+      const t = gh.life / gh.maxLife;
+      ctx.save();
+      ctx.globalAlpha = t * 0.45;
+      ctx.translate(gh.x, gh.y);
+      ctx.scale(gh.flip * (gh.sx || 1), gh.sy || 1);
+      ctx.fillStyle = gh.color || '#c4a56a';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12, 13, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   for (const e of g.enemies) {
     if (e.x < viewX0 - 40 || e.x > viewX1 + 40 || e.y < viewY0 - 40 || e.y > viewY1 + 40) continue;
     drawEnemy(e, g);
@@ -504,6 +521,19 @@ function drawPlayer(p) {
   const charKey = 'char:' + (p.charId || 'well-rounded');
   ctx.save();
   ctx.translate(x, py);
+
+  // 脚步（走路时交替）
+  if (p.moveX || p.moveY) {
+    const step = Math.sin(p.walkT * 2) * 4;
+    ctx.fillStyle = 'rgba(40,30,25,0.85)';
+    ctx.fillRect(-6 + step, R * 0.55, 5, 4);
+    ctx.fillRect(2 - step, R * 0.55, 5, 4);
+  } else {
+    ctx.fillStyle = 'rgba(40,30,25,0.7)';
+    ctx.fillRect(-6, R * 0.55, 5, 3);
+    ctx.fillRect(2, R * 0.55, 5, 3);
+  }
+
   ctx.scale(flip, 1);
   if (!drawSpriteImg(ctx, charKey, 0, 0, dw, dh)) {
     ctx.fillStyle = p.color || '#c4a56a';
@@ -559,6 +589,16 @@ function drawPlayer(p) {
       ctx.fillRect(9, -fz / 2, fz, fz);
     }
     ctx.restore();
+  }
+
+  // 近战挥砍弧
+  if (p.swing > 0) {
+    ctx.strokeStyle = `rgba(255, 240, 180, ${p.swing * 0.7})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const sw = p.facing || 0;
+    ctx.arc(x, py, R + 18, sw - 0.9, sw + 0.9);
+    ctx.stroke();
   }
 
   if (p.killStreak >= 5) {
@@ -682,50 +722,69 @@ function drawEnemyBody(e, animT) {
   const r = e.r;
   const col = e.hitFlash > 0 ? '#ffffff' : e.color;
   const eSize = r * 2.3;
+  const t = animT || 0;
 
   if (e.hitFlash <= 0 && drawSpriteImg(ctx, 'enemy:' + (e.type || 'grunt'), 0, 0, eSize, eSize)) {
-    return;
-  }
-
-  ctx.fillStyle = col;
-  if (e.boss) {
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
-      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-    }
-    ctx.closePath();
-    ctx.fill();
-  } else if (e.elite) {
-    ctx.beginPath();
-    ctx.moveTo(0, -r);
-    ctx.lineTo(r, 0);
-    ctx.lineTo(0, r);
-    ctx.lineTo(-r, 0);
-    ctx.closePath();
-    ctx.fill();
-  } else if (e.type === 'runner' || e.type === 'swarm') {
-    // 尖耳朵/翅膀感
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 0.95, r * 0.75, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.6, -r * 0.3);
-    ctx.lineTo(-r * 1.1, -r * 0.9);
-    ctx.lineTo(-r * 0.2, -r * 0.5);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(r * 0.6, -r * 0.3);
-    ctx.lineTo(r * 1.1, -r * 0.9);
-    ctx.lineTo(r * 0.2, -r * 0.5);
-    ctx.fill();
+    // sprite 已画，额外叠类型特效
   } else {
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillStyle = col;
+    if (e.boss) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.elite) {
+      ctx.beginPath();
+      ctx.moveTo(0, -r);
+      ctx.lineTo(r, 0);
+      ctx.lineTo(0, r);
+      ctx.lineTo(-r, 0);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === 'runner' || e.type === 'swarm') {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * 0.95, r * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const flap = Math.sin(t * 2.5) * r * 0.25;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.6, -r * 0.3);
+      ctx.lineTo(-r * 1.15, -r * 0.9 - flap);
+      ctx.lineTo(-r * 0.2, -r * 0.5);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(r * 0.6, -r * 0.3);
+      ctx.lineTo(r * 1.15, -r * 0.9 - flap);
+      ctx.lineTo(r * 0.2, -r * 0.5);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
-  // 眼睛（受击变 X）
+  // 蝙蝠/虫翅膀层（即使有 sprite 也叠一点摆动感）
+  if ((e.type === 'runner' || e.type === 'swarm') && e.hitFlash <= 0) {
+    const flap = Math.sin(t * 3) * 0.35;
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.9, -r * 0.2, r * 0.45, r * 0.25 + flap, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(r * 0.9, -r * 0.2, r * 0.45, r * 0.25 + flap, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 重装脚部踏地
+  if (e.type === 'tank' && e.hitFlash <= 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    const st = Math.sin(t) * 2;
+    ctx.fillRect(-r * 0.5 + st, r * 0.55, r * 0.35, r * 0.3);
+    ctx.fillRect(r * 0.15 - st, r * 0.55, r * 0.35, r * 0.3);
+  }
+
   if (e.hitFlash > 0) {
     ctx.strokeStyle = '#1a1018';
     ctx.lineWidth = 1.5;
@@ -740,7 +799,6 @@ function drawEnemyBody(e, animT) {
     ctx.fillStyle = '#1a1018';
     ctx.fillRect(-r * 0.35, -r * 0.12, r * 0.22, r * 0.28);
     ctx.fillRect(r * 0.12, -r * 0.12, r * 0.22, r * 0.28);
-    // 高光
     ctx.fillStyle = 'rgba(255,255,255,.2)';
     ctx.fillRect(-r * 0.45, -r * 0.45, r * 0.3, r * 0.2);
   }

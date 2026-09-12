@@ -68,6 +68,7 @@ function createGame(char, seed = Date.now(), difficultyId = 'normal') {
     score: 0,
     timeScale: 1,
     camera: null,
+    ghosts: [],
   };
 }
 
@@ -110,6 +111,7 @@ function tryDash(g) {
   p.dashVy = dy * 720;
   p.invuln = Math.max(p.invuln, 0.22);
   p.facing = Math.atan2(dy, dx);
+  if (g.ghosts) g.ghosts.push(makeGhost(p.x, p.y, p.color, dx < -0.15 ? -1 : 1, 1.25, 0.8));
   for (let i = 0; i < 10; i++) {
     g.particles.push(makeParticle(p.x, p.y, -dx * 80 + (g.rng() - 0.5) * 40, -dy * 80 + (g.rng() - 0.5) * 40, 0.3, '#9ad0ff', 3));
   }
@@ -134,18 +136,21 @@ function updatePlaying(g, dt, input) {
     if (p.streakTimer <= 0) p.killStreak = 0;
   }
   if (p.dashCd > 0) p.dashCd = Math.max(0, p.dashCd - dt);
+  if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 5);
   if (p.dashTime > 0) {
     p.dashTime = Math.max(0, p.dashTime - dt);
-    // 冲刺位移
     p.x += p.dashVx * dt;
     p.y += p.dashVy * dt;
     p.x = clamp(p.x, ARENA.x + p.r, ARENA.x + ARENA.w - p.r);
     p.y = clamp(p.y, ARENA.y + p.r, ARENA.y + ARENA.h - p.r);
-    if (g.rng() < 0.6) {
-      g.particles.push(makeParticle(p.x, p.y, 0, 0, 0.25, 'rgba(200,220,255,0.55)', 4));
+    // 残影 + 灰尘
+    if (g.ghosts && g.rng() < 0.85) {
+      g.ghosts.push(makeGhost(p.x, p.y, p.color, Math.cos(p.facing) < -0.15 ? -1 : 1, 1.2, 0.85));
+    }
+    if (g.rng() < 0.5) {
+      g.particles.push(makeParticle(p.x - p.dashVx * 0.02, p.y - p.dashVy * 0.02, -p.dashVx * 0.15, -p.dashVy * 0.15, 0.28, 'rgba(180,200,230,0.45)', 3));
     }
   } else {
-    // 移动
     let mx = 0, my = 0;
     if (input.left) mx -= 1;
     if (input.right) mx += 1;
@@ -160,6 +165,12 @@ function updatePlaying(g, dt, input) {
       p.walkT += dt * 12;
       p.moveX = mx / ml;
       p.moveY = my / ml;
+      // 奔跑尘土
+      p.dustTimer -= dt;
+      if (p.dustTimer <= 0) {
+        p.dustTimer = 0.12;
+        g.particles.push(makeParticle(p.x - mx * 8, p.y + 8, (g.rng() - 0.5) * 20, 10 + g.rng() * 10, 0.25, 'rgba(160,150,140,0.35)', 2));
+      }
     } else {
       p.moveX = 0;
       p.moveY = 0;
@@ -167,7 +178,6 @@ function updatePlaying(g, dt, input) {
     p.x = clamp(p.x, ARENA.x + p.r, ARENA.x + ARENA.w - p.r);
     p.y = clamp(p.y, ARENA.y + p.r, ARENA.y + ARENA.h - p.r);
 
-    // 请求冲刺
     if (input.dash) {
       input.dash = false;
       tryDash(g);
@@ -305,6 +315,7 @@ function fireWeapon(g, w, wx, wy, target, rangeMul) {
 
   if (def.melee) {
     const range = def.range * rangeMul * (1 + (w.level - 1) * 0.1);
+    if (g.player) g.player.swing = 1;
     for (const e of g.enemies) {
       const d = dist({ x: wx, y: wy }, e);
       if (d < range + e.r) {
@@ -318,11 +329,15 @@ function fireWeapon(g, w, wx, wy, target, rangeMul) {
         }
       }
     }
-    for (let i = 0; i < 8; i++) {
-      const a = aim + (g.rng() - 0.5) * 1.2;
-      g.particles.push(makeParticle(wx, wy, Math.cos(a) * 100, Math.sin(a) * 100, 0.18, def.color, 3));
+    for (let i = 0; i < 14; i++) {
+      const a = aim - 0.7 + (i / 13) * 1.4;
+      const rr = range * (0.55 + g.rng() * 0.5);
+      g.particles.push(makeParticle(
+        wx + Math.cos(a) * rr, wy + Math.sin(a) * rr,
+        Math.cos(a) * 50, Math.sin(a) * 50,
+        0.2, def.color, 3
+      ));
     }
-    // muzzle flash
     g.particles.push(makeParticle(wx + Math.cos(aim) * 12, wy + Math.sin(aim) * 12, 0, 0, 0.08, '#fff8d0', 6));
     return;
   }
@@ -872,6 +887,11 @@ function updateFx(g, dt) {
     p.vy *= 0.95;
   }
   g.particles = g.particles.filter(p => p.life > 0);
+
+  if (g.ghosts) {
+    for (const gh of g.ghosts) gh.life -= dt;
+    g.ghosts = g.ghosts.filter(gh => gh.life > 0);
+  }
 
   for (const f of g.floats) {
     f.life -= dt;

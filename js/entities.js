@@ -61,7 +61,13 @@ function makePlayer(char) {
     moveY: 0,
     hurtLean: 0,
     idleT: 0,
+    dustTimer: 0,
+    swing: 0,
   };
+}
+
+function makeGhost(x, y, color, flip, sx, sy) {
+  return { x, y, color, flip, sx, sy, life: 0.22, maxLife: 0.22 };
 }
 
 function makeWeapon(def) {
