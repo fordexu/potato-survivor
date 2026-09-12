@@ -229,7 +229,7 @@ function updatePlaying(g, dt, input) {
     const bonus = Math.round(5 + g.wave * 3 + p.stats.harvesting * 0.25);
     p.materials += bonus;
     g.floats.push(makeFloatText(p.x, p.y - 28, `波次奖励 +${bonus}◈`, '#e8a838', 14));
-    if (g.wave >= 20) {
+    if (g.wave >= MAX_WAVES) {
       g.state = 'victory';
       Sfx.win();
     } else {

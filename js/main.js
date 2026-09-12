@@ -112,7 +112,8 @@ function leaveShop() {
   if (!game) return;
   hide('shop');
   nextWave(game);
-  showBanner(game.wave, game.wave === 20 ? '最终决战！' : '准备迎战');
+  const isBoss = game.wave % 5 === 0;
+  showBanner(game.wave, isBoss ? (game.wave >= MAX_WAVES ? '最终决战！' : 'BOSS 来袭！') : '准备迎战');
   renderHud(game);
 }
 

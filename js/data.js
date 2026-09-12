@@ -304,47 +304,72 @@ const ENEMY_TYPES = {
   },
 };
 
-const WAVES = [
-  // wave 1-20
-  { time: 40, spawnRate: 0.7, pool: ['runner'], count: 12 },
-  { time: 40, spawnRate: 0.65, pool: ['runner', 'grunt'], count: 16 },
-  { time: 42, spawnRate: 0.6, pool: ['runner', 'grunt'], count: 20 },
-  { time: 42, spawnRate: 0.55, pool: ['runner', 'grunt', 'shooter'], count: 22 },
-  { time: 45, spawnRate: 0.5, pool: ['grunt', 'shooter', 'runner'], count: 26 },
-  { time: 45, spawnRate: 0.5, pool: ['grunt', 'tank', 'runner'], count: 28 },
-  { time: 45, spawnRate: 0.45, pool: ['runner', 'grunt', 'shooter', 'swarm'], count: 32 },
-  { time: 48, spawnRate: 0.45, pool: ['grunt', 'tank', 'shooter'], count: 34 },
-  { time: 48, spawnRate: 0.4, pool: ['runner', 'swarm', 'shooter', 'grunt'], count: 38 },
-  { time: 50, spawnRate: 0.4, pool: ['tank', 'shooter', 'grunt', 'elite'], count: 40, elite: 1 },
-  { time: 50, spawnRate: 0.38, pool: ['runner', 'grunt', 'tank', 'shooter'], count: 42 },
-  { time: 50, spawnRate: 0.35, pool: ['swarm', 'shooter', 'tank', 'grunt'], count: 46 },
-  { time: 52, spawnRate: 0.35, pool: ['tank', 'shooter', 'elite', 'grunt'], count: 48, elite: 2 },
-  { time: 52, spawnRate: 0.32, pool: ['runner', 'shooter', 'tank', 'swarm'], count: 50 },
-  { time: 55, spawnRate: 0.32, pool: ['tank', 'shooter', 'elite', 'grunt'], count: 54, elite: 2 },
-  { time: 55, spawnRate: 0.3, pool: ['grunt', 'tank', 'shooter', 'elite'], count: 56, elite: 3 },
-  { time: 55, spawnRate: 0.28, pool: ['tank', 'elite', 'shooter', 'swarm'], count: 60, elite: 3 },
-  { time: 58, spawnRate: 0.28, pool: ['tank', 'shooter', 'elite', 'grunt'], count: 64, elite: 4 },
-  { time: 58, spawnRate: 0.25, pool: ['elite', 'tank', 'shooter', 'runner'], count: 68, elite: 4 },
-  { time: 70, spawnRate: 0.5, pool: ['boss'], count: 1, boss: true, elite: 0 },
-];
+const MAX_WAVES = 30;
+
+function buildWaves() {
+  const list = [];
+  const pools = [
+    ['runner'],
+    ['runner', 'grunt'],
+    ['runner', 'grunt'],
+    ['runner', 'grunt', 'shooter'],
+    ['grunt', 'shooter', 'runner'],
+    ['grunt', 'tank', 'runner'],
+    ['runner', 'grunt', 'shooter', 'swarm'],
+    ['grunt', 'tank', 'shooter'],
+    ['runner', 'swarm', 'shooter', 'grunt'],
+    ['tank', 'shooter', 'grunt', 'elite'],
+    ['runner', 'grunt', 'tank', 'shooter'],
+    ['swarm', 'shooter', 'tank', 'grunt'],
+    ['tank', 'shooter', 'elite', 'grunt'],
+    ['runner', 'shooter', 'tank', 'swarm'],
+    ['tank', 'shooter', 'elite', 'grunt'],
+    ['grunt', 'tank', 'shooter', 'elite'],
+    ['tank', 'elite', 'shooter', 'swarm'],
+    ['tank', 'shooter', 'elite', 'grunt'],
+    ['elite', 'tank', 'shooter', 'runner'],
+    ['tank', 'elite', 'shooter', 'grunt'],
+    ['swarm', 'elite', 'shooter', 'grunt'],
+    ['tank', 'elite', 'grunt', 'shooter'],
+    ['elite', 'shooter', 'tank', 'swarm'],
+    ['tank', 'elite', 'shooter', 'grunt', 'runner'],
+    ['elite', 'tank', 'shooter', 'swarm'],
+  ];
+  for (let n = 1; n <= MAX_WAVES; n++) {
+    if (n % 5 === 0) {
+      // Boss 波：Boss + 少量护卫，越后期护卫越多
+      const guards = Math.floor(n / 5);
+      list.push({
+        time: 55 + n,
+        spawnRate: 0.55,
+        pool: ['boss', 'grunt', 'shooter', 'elite'],
+        count: 1 + Math.min(8, guards * 2),
+        boss: true,
+        elite: Math.max(0, guards - 1),
+      });
+      continue;
+    }
+    const i = (n - 1) % pools.length;
+    const tier = Math.floor((n - 1) / 5);
+    const count = Math.round(10 + n * 1.8);
+    const spawnRate = Math.max(0.18, 0.72 - n * 0.014);
+    const elite = n >= 9 ? Math.max(0, Math.floor((n - 6) / 5)) : 0;
+    list.push({
+      time: 38 + Math.min(22, n * 0.8),
+      spawnRate,
+      pool: pools[i],
+      count,
+      elite: elite + (tier >= 2 ? 1 : 0),
+    });
+  }
+  return list;
+}
+
+const WAVES = buildWaves();
 
 function getWaveConfig(n) {
-  const i = Math.min(n - 1, WAVES.length - 1);
-  const base = WAVES[i];
-  // 后续循环难度
-  if (n > WAVES.length) {
-    const extra = n - WAVES.length;
-    return {
-      ...base,
-      time: 60,
-      spawnRate: Math.max(0.15, 0.25 - extra * 0.01),
-      pool: ['tank', 'elite', 'shooter', 'grunt', 'runner'],
-      count: 70 + extra * 8,
-      elite: 4 + extra,
-      boss: n % 5 === 0,
-    };
-  }
-  return base;
+  const i = Math.min(Math.max(1, n) - 1, WAVES.length - 1);
+  return { ...WAVES[i] };
 }
 
 const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
