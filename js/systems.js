@@ -1,0 +1,672 @@
+// ===== 游戏系统 =====
+
+const ARENA = { x: 40, y: 30, w: 880, h: 480 };
+
+function createGame(char, seed = Date.now()) {
+  const player = makePlayer(char);
+  for (const wid of char.startWeapons) {
+    player.weapons.push(makeWeapon(WEAPONS[wid]));
+  }
+  return {
+    state: 'playing', // playing | shop | levelup | gameover | victory
+    player,
+    enemies: [],
+    bullets: [],
+    pickups: [],
+    particles: [],
+    floats: [],
+    wave: 1,
+    waveTime: 0,
+    waveConfig: null,
+    spawnTimer: 0,
+    spawned: 0,
+    elapsed: 0,
+    rng: mulberry32(seed),
+    shake: 0,
+    flash: 0,
+    shopItems: [],
+    rerollCost: 5,
+    upgradeChoices: [],
+    pendingLevelUps: 0,
+    pendingShop: false,
+    score: 0,
+  };
+}
+
+function startWave(g) {
+  const cfg = getWaveConfig(g.wave);
+  g.waveConfig = cfg;
+  g.waveTime = cfg.time;
+  g.spawnTimer = 0.5;
+  g.spawned = 0;
+  g.state = 'playing';
+  Sfx.wave();
+}
+
+function enemyScale(g) {
+  return 1 + (g.wave - 1) * 0.12;
+}
+
+function updatePlaying(g, dt, input) {
+  const p = g.player;
+  g.elapsed += dt;
+  g.waveTime -= dt;
+  if (g.shake > 0) g.shake = Math.max(0, g.shake - dt * 18);
+  if (g.flash > 0) g.flash = Math.max(0, g.flash - dt * 4);
+  if (p.invuln > 0) p.invuln -= dt;
+
+  // 移动
+  let mx = 0, my = 0;
+  if (input.left) mx -= 1;
+  if (input.right) mx += 1;
+  if (input.up) my -= 1;
+  if (input.down) my += 1;
+  const ml = Math.hypot(mx, my) || 1;
+  const spd = 160 * (1 + p.stats.speed / 100);
+  if (mx || my) {
+    p.x += (mx / ml) * spd * dt;
+    p.y += (my / ml) * spd * dt;
+    p.facing = Math.atan2(my, mx);
+    p.walkT += dt * 10;
+  }
+  p.x = clamp(p.x, ARENA.x + p.r, ARENA.x + ARENA.w - p.r);
+  p.y = clamp(p.y, ARENA.y + p.r, ARENA.y + ARENA.h - p.r);
+
+  // 回血
+  if (p.stats.hpRegen > 0 && p.hp > 0 && p.hp < p.stats.maxHp) {
+    p.hp = Math.min(p.stats.maxHp, p.hp + p.stats.hpRegen * dt);
+  }
+
+  // 刷怪
+  if (g.waveConfig && g.spawned < g.waveConfig.count) {
+    g.spawnTimer -= dt;
+    if (g.spawnTimer <= 0) {
+      const cfg = g.waveConfig;
+      g.spawnTimer = cfg.spawnRate * (0.7 + g.rng() * 0.6);
+      let type = cfg.pool[Math.floor(g.rng() * cfg.pool.length)];
+      if (cfg.elite && g.spawned >= cfg.count - cfg.elite && type !== 'boss') {
+        type = 'elite';
+      }
+      if (cfg.boss && g.spawned === 0) type = 'boss';
+      const pos = spawnEdgePos(ARENA, g.rng);
+      g.enemies.push(makeEnemy(type, pos.x, pos.y, enemyScale(g)));
+      g.spawned++;
+    }
+  }
+
+  // 武器自动攻击
+  updateWeapons(g, dt);
+
+  // 敌人
+  updateEnemies(g, dt);
+
+  // 子弹
+  updateBullets(g, dt);
+
+  // 拾取
+  updatePickups(g, dt);
+
+  // 粒子/飘字
+  updateFx(g, dt);
+
+  // 波次结束
+  if (g.waveTime <= 0 && g.enemies.length === 0 && g.spawned >= (g.waveConfig?.count || 0)) {
+    // 自动结算场上掉落
+    for (const item of g.pickups) {
+      if (item.kind === 'mat') p.materials += item.value;
+      else if (item.kind === 'xp') addXp(g, item.value, true);
+      else if (item.kind === 'heal') p.hp = Math.min(p.stats.maxHp, p.hp + item.value);
+    }
+    g.pickups.length = 0;
+    const bonus = Math.round(3 + g.wave * 1.5 + p.stats.harvesting * 0.15);
+    p.materials += bonus;
+    g.floats.push(makeFloatText(p.x, p.y - 28, `波次奖励 +${bonus}◈`, '#e8a838', 14));
+    if (g.wave >= 20) {
+      g.state = 'victory';
+      Sfx.win();
+    } else {
+      // 若升级触发，优先升级再进商店
+      if (g.pendingLevelUps > 0) {
+        g.pendingShop = true;
+        openLevelup(g);
+      } else {
+        g.state = 'shop';
+        generateShop(g);
+        Sfx.wave();
+      }
+    }
+  }
+
+  if (p.hp <= 0 && g.state === 'playing') {
+    p.hp = 0;
+    g.state = 'gameover';
+    Sfx.lose();
+  }
+}
+
+function updateWeapons(g, dt) {
+  const p = g.player;
+  const dmgMul = 1 + p.stats.damage / 100;
+  const asMul = 1 + p.stats.attackSpeed / 100;
+  const rangeMul = 1 + p.stats.range / 100;
+
+  // 武器环绕偏移
+  const n = p.weapons.length;
+  for (let i = 0; i < n; i++) {
+    const w = p.weapons[i];
+    const baseAngle = (i / Math.max(1, n)) * Math.PI * 2;
+    w.angle = baseAngle;
+
+    // 找最近目标
+    let target = null;
+    let best = Infinity;
+    const wx = p.x + Math.cos(baseAngle) * 18;
+    const wy = p.y + Math.sin(baseAngle) * 10;
+    const range = w.def.range * rangeMul * (1 + (w.level - 1) * 0.08);
+    for (const e of g.enemies) {
+      const d = dist({ x: wx, y: wy }, e);
+      if (d < best && d < range) { best = d; target = e; }
+    }
+
+    w.cd -= dt * asMul;
+    if (w.fireAnim > 0) w.fireAnim -= dt * 4;
+
+    if (target && w.cd <= 0) {
+      w.cd = w.def.cooldown * (1 + (w.level - 1) * 0.04);
+      w.fireAnim = 1;
+      fireWeapon(g, w, wx, wy, target, dmgMul, rangeMul);
+    }
+  }
+}
+
+function rollDamage(g, base) {
+  const p = g.player;
+  let dmg = base * (1 + p.stats.damage / 100);
+  let crit = false;
+  if (g.rng() * 100 < p.stats.critChance) {
+    dmg *= p.stats.critMult;
+    crit = true;
+  }
+  return { dmg, crit };
+}
+
+function fireWeapon(g, w, wx, wy, target, dmgMul, rangeMul) {
+  const p = g.player;
+  const def = w.def;
+  const levelMul = 1 + (w.level - 1) * 0.25;
+  const aim = Math.atan2(target.y - wy, target.x - wx);
+  Sfx.shoot();
+
+  if (def.melee) {
+    // 近战：扇形判定
+    const range = def.range * rangeMul * (1 + (w.level - 1) * 0.1);
+    for (const e of g.enemies) {
+      const d = dist({ x: wx, y: wy }, e);
+      if (d < range + e.r) {
+        const ang = Math.atan2(e.y - wy, e.x - wx);
+        let da = ang - aim;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        if (Math.abs(da) < 0.9) {
+          const { dmg, crit } = rollDamage(g, def.damage * levelMul);
+          damageEnemy(g, e, dmg, crit, aim, def.knockback);
+        }
+      }
+    }
+    // 视觉粒子
+    for (let i = 0; i < 6; i++) {
+      const a = aim + (g.rng() - 0.5) * 1.2;
+      g.particles.push(makeParticle(wx, wy, Math.cos(a) * 80, Math.sin(a) * 80, 0.15, def.color, 3));
+    }
+    return;
+  }
+
+  const count = def.bullets;
+  for (let i = 0; i < count; i++) {
+    const spread = (g.rng() - 0.5) * 2 * def.spread;
+    const a = aim + spread;
+    const speed = def.speed;
+    const { dmg, crit } = rollDamage(g, def.damage * levelMul);
+    // 暴击记录在 bullet 上，命中时用
+    const b = makeBullet(wx, wy, Math.cos(a) * speed, Math.sin(a) * speed, dmg, {
+      size: def.bulletSize,
+      pierce: def.pierce,
+      color: def.color,
+      life: (def.range * rangeMul) / Math.max(1, speed) + 0.1,
+      homing: !!def.homing,
+      aoe: def.aoe || 0,
+      knockback: def.knockback,
+    });
+    b.crit = crit;
+    g.bullets.push(b);
+  }
+}
+
+function damageEnemy(g, e, dmg, crit, angle = 0, kb = 0) {
+  if (e.dead) return;
+  e.hp -= dmg;
+  e.hitFlash = 0.12;
+  if (kb) {
+    const d = Math.hypot(Math.cos(angle), Math.sin(angle)) || 1;
+    e.vx += (Math.cos(angle) / 1) * kb;
+    e.vy += (Math.sin(angle) / 1) * kb;
+    e.kb = 0.15;
+  }
+  g.player.damageDealt += dmg;
+  const col = crit ? '#ffe060' : '#fff';
+  g.floats.push(makeFloatText(e.x, e.y - e.r - 4, Math.round(dmg) + (crit ? '!' : ''), col, crit ? 14 : 11));
+  for (let i = 0; i < 3; i++) {
+    g.particles.push(makeParticle(e.x, e.y, (g.rng() - 0.5) * 100, (g.rng() - 0.5) * 100, 0.25, e.color, 2));
+  }
+
+  if (e.hp <= 0) {
+    e.dead = true;
+    g.player.kills++;
+    g.score += Math.round(e.maxHp);
+    Sfx.kill();
+    // 掉落
+    const luckBonus = g.player.stats.luck / 100;
+    if (g.rng() < 0.85 + luckBonus * 0.1) {
+      const matVal = Math.max(1, Math.round(e.mat * (1 + g.player.stats.harvesting / 100)));
+      g.pickups.push(makePickup(e.x, e.y, 'mat', matVal));
+    }
+    g.pickups.push(makePickup(e.x + (g.rng() - 0.5) * 10, e.y + (g.rng() - 0.5) * 10, 'xp', e.xp));
+    if (g.rng() < 0.03 + luckBonus * 0.05) {
+      g.pickups.push(makePickup(e.x, e.y, 'heal', 2));
+    }
+    // 爆裂
+    for (let i = 0; i < 8; i++) {
+      const a = g.rng() * Math.PI * 2;
+      const sp = 40 + g.rng() * 80;
+      g.particles.push(makeParticle(e.x, e.y, Math.cos(a) * sp, Math.sin(a) * sp, 0.35, e.color, 3));
+    }
+    if (e.boss) g.shake = 12;
+  }
+}
+
+function damagePlayer(g, amount) {
+  const p = g.player;
+  if (p.invuln > 0) return;
+  if (g.rng() * 100 < p.stats.dodge) {
+    g.floats.push(makeFloatText(p.x, p.y - 20, '闪避', '#6fd3c8', 12));
+    return;
+  }
+  const armor = p.stats.armor;
+  const reduced = amount * (100 / (100 + armor));
+  p.hp -= reduced;
+  p.invuln = 0.5;
+  g.shake = 6;
+  g.flash = 0.35;
+  Sfx.hurt();
+  g.floats.push(makeFloatText(p.x, p.y - 22, '-' + Math.round(reduced), '#ff6060', 13));
+  for (let i = 0; i < 6; i++) {
+    const a = g.rng() * Math.PI * 2;
+    g.particles.push(makeParticle(p.x, p.y, Math.cos(a) * 60, Math.sin(a) * 60, 0.3, '#e85a5a', 3));
+  }
+  if (p.hp <= 0) {
+    p.hp = 0;
+  }
+}
+
+function updateEnemies(g, dt) {
+  const p = g.player;
+  for (const e of g.enemies) {
+    if (e.dead) continue;
+    if (e.hitFlash > 0) e.hitFlash -= dt;
+    if (e.kb > 0) {
+      e.kb -= dt;
+      e.x += e.vx * dt;
+      e.y += e.vy * dt;
+      e.vx *= 0.85;
+      e.vy *= 0.85;
+    }
+
+    const dx = p.x - e.x;
+    const dy = p.y - e.y;
+    const d = Math.hypot(dx, dy) || 1;
+
+    // 射手保持距离
+    if (e.shootRange && !e.boss) {
+      e.shootTimer -= dt;
+      const ideal = e.shootRange * 0.7;
+      if (d > ideal + 20) {
+        e.x += (dx / d) * e.speed * dt;
+        e.y += (dy / d) * e.speed * dt;
+      } else if (d < ideal - 30) {
+        e.x -= (dx / d) * e.speed * 0.7 * dt;
+        e.y -= (dy / d) * e.speed * 0.7 * dt;
+      } else {
+        // 侧移
+        e.x += (-dy / d) * e.speed * 0.4 * dt;
+        e.y += (dx / d) * e.speed * 0.4 * dt;
+      }
+      if (e.shootTimer <= 0 && d < e.shootRange) {
+        e.shootTimer = e.shootCooldown;
+        const a = Math.atan2(dy, dx);
+        g.bullets.push(makeEnemyBullet(e.x, e.y, Math.cos(a) * e.bulletSpeed, Math.sin(a) * e.bulletSpeed, e.damage, { color: e.color }));
+      }
+    } else if (e.boss) {
+      // BOSS：追击 + 周期弹幕
+      e.x += (dx / d) * e.speed * dt;
+      e.y += (dy / d) * e.speed * dt;
+      e.shootTimer -= dt;
+      if (e.shootTimer <= 0) {
+        e.shootTimer = e.shootCooldown;
+        const base = Math.atan2(dy, dx);
+        for (let i = 0; i < 8; i++) {
+          const a = base + (i / 8) * Math.PI * 2;
+          g.bullets.push(makeEnemyBullet(e.x, e.y, Math.cos(a) * 160, Math.sin(a) * 160, e.damage * 0.6, { color: '#e04060', size: 5 }));
+        }
+      }
+    } else {
+      e.x += (dx / d) * e.speed * dt;
+      e.y += (dy / d) * e.speed * dt;
+    }
+
+    // 保持在场地附近
+    e.x = clamp(e.x, ARENA.x - 80, ARENA.x + ARENA.w + 80);
+    e.y = clamp(e.y, ARENA.y - 80, ARENA.y + ARENA.h + 80);
+
+    // 碰撞玩家
+    if (e.touchDamage && dist(e, p) < e.r + p.r) {
+      damagePlayer(g, e.damage);
+    }
+
+    // 敌人之间简单分离
+    for (const o of g.enemies) {
+      if (o === e || o.dead) continue;
+      const ddx = e.x - o.x;
+      const ddy = e.y - o.y;
+      const dd = Math.hypot(ddx, ddy) || 1;
+      const minD = e.r + o.r;
+      if (dd < minD) {
+        const push = (minD - dd) * 0.5;
+        e.x += (ddx / dd) * push * dt * 8;
+        e.y += (ddy / dd) * push * dt * 8;
+      }
+    }
+  }
+  g.enemies = g.enemies.filter(e => !e.dead);
+}
+
+function updateBullets(g, dt) {
+  const p = g.player;
+  for (const b of g.bullets) {
+    b.life -= dt;
+    if (b.life <= 0) { b.dead = true; continue; }
+
+    if (b.homing) {
+      let target = null;
+      let best = 120;
+      for (const e of g.enemies) {
+        const d = dist(b, e);
+        if (d < best) { best = d; target = e; }
+      }
+      if (target) {
+        const a = Math.atan2(target.y - b.y, target.x - b.x);
+        const sp = Math.hypot(b.vx, b.vy);
+        b.vx += (Math.cos(a) * sp - b.vx) * 4 * dt;
+        b.vy += (Math.sin(a) * sp - b.vy) * 4 * dt;
+      }
+    }
+
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+
+    // 出界
+    if (b.x < ARENA.x - 40 || b.x > ARENA.x + ARENA.w + 40 ||
+        b.y < ARENA.y - 40 || b.y > ARENA.y + ARENA.h + 40) {
+      b.dead = true;
+      continue;
+    }
+
+    if (b.fromPlayer) {
+      for (const e of g.enemies) {
+        if (e.dead || b.hitIds.has(e.id)) continue;
+        if (dist(b, e) < b.r + e.r) {
+          b.hitIds.add(e.id);
+          const ang = Math.atan2(b.vy, b.vx);
+          damageEnemy(g, e, b.damage, b.crit, ang, b.knockback);
+          Sfx.hit();
+          if (b.aoe) {
+            for (const oe of g.enemies) {
+              if (oe.dead || oe === e) continue;
+              if (dist(e, oe) < b.aoe) {
+                damageEnemy(g, oe, b.damage * 0.6, false, ang, b.knockback * 0.5);
+              }
+            }
+            for (let i = 0; i < 12; i++) {
+              const a = g.rng() * Math.PI * 2;
+              g.particles.push(makeParticle(e.x, e.y, Math.cos(a) * 120, Math.sin(a) * 120, 0.3, '#e87030', 3));
+            }
+            g.shake = Math.max(g.shake, 4);
+          }
+          if (b.pierce > 0) b.pierce--;
+          else { b.dead = true; break; }
+        }
+      }
+    } else {
+      // 敌方子弹打玩家
+      if (dist(b, p) < b.r + p.r) {
+        damagePlayer(g, b.damage);
+        b.dead = true;
+      }
+    }
+  }
+  g.bullets = g.bullets.filter(b => !b.dead);
+}
+
+function updatePickups(g, dt) {
+  const p = g.player;
+  const pickupR = 90 * (1 + p.stats.pickupRange / 100);
+  for (const item of g.pickups) {
+    item.bob += dt * 4;
+    const d = dist(item, p);
+    if (d < pickupR) item.magnet = true;
+    if (item.magnet) {
+      const dx = p.x - item.x;
+      const dy = p.y - item.y;
+      const dd = Math.hypot(dx, dy) || 1;
+      const sp = 220 + Math.max(0, 200 - dd);
+      item.x += (dx / dd) * sp * dt;
+      item.y += (dy / dd) * sp * dt;
+    }
+    if (d < p.r + item.r + 4) {
+      item.dead = true;
+      if (item.kind === 'mat') {
+        p.materials += item.value;
+        Sfx.pickup();
+      } else if (item.kind === 'xp') {
+        addXp(g, item.value);
+        Sfx.pickup();
+      } else if (item.kind === 'heal') {
+        p.hp = Math.min(p.stats.maxHp, p.hp + item.value);
+        g.floats.push(makeFloatText(p.x, p.y - 20, '+' + item.value, '#7bc96f', 12));
+        Sfx.pickup();
+      }
+    }
+  }
+  g.pickups = g.pickups.filter(i => !i.dead);
+}
+
+function addXp(g, amount, silent = false) {
+  const p = g.player;
+  p.xp += amount;
+  while (p.xp >= p.xpNeed) {
+    p.xp -= p.xpNeed;
+    p.level++;
+    p.xpNeed = Math.floor(8 + p.level * 4.5);
+    g.pendingLevelUps++;
+  }
+  if (!silent && g.pendingLevelUps > 0 && g.state === 'playing') {
+    openLevelup(g);
+  }
+}
+
+function openLevelup(g) {
+  g.state = 'levelup';
+  g.upgradeChoices = rollUpgrades(g, 4);
+  Sfx.levelup();
+}
+
+function rollUpgrades(g, n) {
+  const pool = UPGRADES.slice();
+  const picks = [];
+  for (let i = 0; i < n && pool.length; i++) {
+    const u = pickWeighted(pool, g.rng, x => x.weight);
+    picks.push(u);
+    pool.splice(pool.indexOf(u), 1);
+  }
+  return picks;
+}
+
+function applyUpgrade(g, upgrade) {
+  upgrade.apply(g.player.stats);
+  if (g.player.hp > g.player.stats.maxHp) g.player.hp = g.player.stats.maxHp;
+  g.pendingLevelUps--;
+  if (g.pendingLevelUps > 0) {
+    g.upgradeChoices = rollUpgrades(g, 4);
+  } else if (g.pendingShop) {
+    g.pendingShop = false;
+    g.state = 'shop';
+    generateShop(g);
+    Sfx.wave();
+  } else {
+    g.state = 'playing';
+  }
+}
+
+function generateShop(g) {
+  const items = [];
+  const p = g.player;
+  // 4 个商品
+  const slots = 4 + (g.rng() < 0.3 + p.stats.luck / 200 ? 1 : 0);
+  for (let i = 0; i < slots; i++) {
+    const kindRoll = g.rng();
+    if (kindRoll < 0.45) {
+      // 武器
+      const wids = Object.keys(WEAPONS);
+      const pick = wids[Math.floor(g.rng() * wids.length)];
+      const def = WEAPONS[pick];
+      // 幸运影响品质
+      let rarity = def.rarity;
+      if (g.rng() < p.stats.luck / 200) {
+        const idx = RARITY_ORDER.indexOf(rarity);
+        rarity = RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, idx + 1)];
+      }
+      items.push({
+        kind: 'weapon',
+        id: pick,
+        name: def.name,
+        icon: def.icon,
+        desc: def.desc,
+        rarity,
+        price: Math.round(def.price * (1 + (g.wave - 1) * 0.08)),
+        weapon: def,
+      });
+    } else if (kindRoll < 0.75) {
+      // 属性升级
+      const u = pickWeighted(UPGRADES, g.rng, x => x.weight);
+      items.push({
+        kind: 'upgrade',
+        id: u.id,
+        name: u.name,
+        icon: u.icon,
+        desc: u.desc,
+        rarity: 'common',
+        price: 8 + g.wave + Math.floor(g.rng() * 6),
+        upgrade: u,
+      });
+    } else {
+      // 消耗品
+      const c = CONSUMABLES[Math.floor(g.rng() * CONSUMABLES.length)];
+      items.push({
+        kind: 'consumable',
+        id: c.id,
+        name: c.name,
+        icon: c.icon,
+        desc: c.desc,
+        rarity: c.rarity,
+        price: c.price,
+        consumable: c,
+      });
+    }
+  }
+  g.shopItems = items;
+  g.rerollCost = 5 + g.wave;
+}
+
+function buyShopItem(g, idx) {
+  const item = g.shopItems[idx];
+  if (!item || item.sold) return false;
+  const p = g.player;
+  if (p.materials < item.price) {
+    Sfx.deny();
+    return false;
+  }
+  p.materials -= item.price;
+  item.sold = true;
+  Sfx.buy();
+
+  if (item.kind === 'weapon') {
+    if (p.weapons.length < 6) {
+      p.weapons.push(makeWeapon(item.weapon));
+    } else {
+      // 升级已有同类型
+      const same = p.weapons.find(w => w.def.id === item.weapon.id);
+      if (same) same.level++;
+      else {
+        // 替换最弱？简化：升随机一件
+        const w = p.weapons[Math.floor(g.rng() * p.weapons.length)];
+        w.level++;
+      }
+    }
+  } else if (item.kind === 'upgrade') {
+    item.upgrade.apply(p.stats);
+    if (p.hp > p.stats.maxHp) p.hp = p.stats.maxHp;
+  } else if (item.kind === 'consumable') {
+    item.consumable.use(g);
+  }
+  return true;
+}
+
+function rerollShop(g) {
+  const p = g.player;
+  if (p.materials < g.rerollCost) {
+    Sfx.deny();
+    return false;
+  }
+  p.materials -= g.rerollCost;
+  g.rerollCost += 3;
+  generateShopItemsOnly(g);
+  Sfx.buy();
+  return true;
+}
+
+function generateShopItemsOnly(g) {
+  const oldCost = g.rerollCost;
+  generateShop(g);
+  g.rerollCost = oldCost;
+}
+
+function updateFx(g, dt) {
+  for (const p of g.particles) {
+    p.life -= dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.95;
+    p.vy *= 0.95;
+  }
+  g.particles = g.particles.filter(p => p.life > 0);
+
+  for (const f of g.floats) {
+    f.life -= dt;
+    f.y += f.vy * dt;
+  }
+  g.floats = g.floats.filter(f => f.life > 0);
+}
+
+function nextWave(g) {
+  g.wave++;
+  startWave(g);
+}

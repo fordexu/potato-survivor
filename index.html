@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>土豆幸存者 · Potato Survivor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game" width="960" height="540"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="stat-block">
+          <div class="hp-bar-wrap">
+            <div id="hp-bar" class="hp-bar"></div>
+            <span id="hp-text">10 / 10</span>
+          </div>
+          <div class="mini-stats">
+            <span id="wave-label">波次 1</span>
+            <span id="timer-label">60s</span>
+          </div>
+        </div>
+        <div class="materials">
+          <span class="mat-icon">◈</span>
+          <span id="mat-count">0</span>
+        </div>
+      </div>
+      <div class="hud-bottom">
+        <div id="weapon-slots" class="weapon-slots"></div>
+        <div class="xp-wrap">
+          <div id="xp-bar" class="xp-bar"></div>
+          <span id="xp-text">Lv 1</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主菜单 -->
+    <div id="menu" class="overlay">
+      <div class="panel menu-panel">
+        <h1 class="title">土豆幸存者</h1>
+        <p class="subtitle">Potato Survivor</p>
+        <p class="hint">自动射击 · 波次生存 · 商店强化</p>
+        <button id="btn-start" class="btn primary">开始游戏</button>
+        <div class="controls">
+          <div><kbd>WASD</kbd> / <kbd>方向键</kbd> 移动（武器自动射击）</div>
+          <div><kbd>空格</kbd> / <kbd>Enter</kbd> 下一波 · <kbd>R</kbd> 重铸</div>
+          <div><kbd>1-6</kbd> 购买/升级 · <kbd>M</kbd> 音效开关</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 角色选择 -->
+    <div id="char-select" class="overlay hidden">
+      <div class="panel wide">
+        <h2>选择土豆</h2>
+        <div id="char-list" class="char-list"></div>
+        <button id="btn-char-back" class="btn">返回</button>
+      </div>
+    </div>
+
+    <!-- 升级选择 -->
+    <div id="levelup" class="overlay hidden">
+      <div class="panel wide">
+        <h2>升级！选择一项强化</h2>
+        <div id="upgrade-list" class="card-list"></div>
+      </div>
+    </div>
+
+    <!-- 商店 -->
+    <div id="shop" class="overlay hidden">
+      <div class="panel shop-panel">
+        <div class="shop-header">
+          <h2>商店</h2>
+          <div class="shop-meta">
+            <span>材料 <strong id="shop-mat">0</strong></span>
+            <span>重铸 <strong id="reroll-cost">5</strong> ◈</span>
+          </div>
+        </div>
+        <div id="shop-items" class="shop-grid"></div>
+        <div class="shop-actions">
+          <button id="btn-reroll" class="btn">重铸 (R)</button>
+          <button id="btn-next-wave" class="btn primary">下一波 (空格)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 波次预告 -->
+    <div id="wave-banner" class="banner hidden">
+      <div class="banner-text">第 <span id="banner-wave">1</span> 波</div>
+      <div class="banner-sub" id="banner-sub">准备迎战</div>
+    </div>
+
+    <!-- 结算 -->
+    <div id="gameover" class="overlay hidden">
+      <div class="panel">
+        <h2 id="end-title">你倒下了</h2>
+        <div id="end-stats" class="end-stats"></div>
+        <button id="btn-retry" class="btn primary">再来一局</button>
+        <button id="btn-menu" class="btn">主菜单</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/systems.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
