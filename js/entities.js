@@ -53,6 +53,12 @@ function makePlayer(char) {
     damageDealt: 0,
     killStreak: 0,
     streakTimer: 0,
+    dashCd: 0,
+    dashTime: 0,
+    dashVx: 0,
+    dashVy: 0,
+    moveX: 0,
+    moveY: 0,
   };
 }
 

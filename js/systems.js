@@ -71,6 +71,26 @@ function enemyScale(g) {
   return base * ((g.difficulty && g.difficulty.enemyHp) || 1);
 }
 
+function tryDash(g) {
+  const p = g.player;
+  if (p.dashCd > 0 || p.dashTime > 0 || p.hp <= 0) return false;
+  let dx = p.moveX || Math.cos(p.facing || 0);
+  let dy = p.moveY || Math.sin(p.facing || 0);
+  if (!dx && !dy) { dx = 1; dy = 0; }
+  const len = Math.hypot(dx, dy) || 1;
+  dx /= len; dy /= len;
+  p.dashTime = 0.18;
+  p.dashCd = 1.2;
+  p.dashVx = dx * 720;
+  p.dashVy = dy * 720;
+  p.invuln = Math.max(p.invuln, 0.22);
+  p.facing = Math.atan2(dy, dx);
+  for (let i = 0; i < 10; i++) {
+    g.particles.push(makeParticle(p.x, p.y, -dx * 80 + (g.rng() - 0.5) * 40, -dy * 80 + (g.rng() - 0.5) * 40, 0.3, '#9ad0ff', 3));
+  }
+  return true;
+}
+
 function updatePlaying(g, dt, input) {
   const p = g.player;
   // hit-stop
@@ -88,23 +108,47 @@ function updatePlaying(g, dt, input) {
     p.streakTimer -= dt;
     if (p.streakTimer <= 0) p.killStreak = 0;
   }
+  if (p.dashCd > 0) p.dashCd = Math.max(0, p.dashCd - dt);
+  if (p.dashTime > 0) {
+    p.dashTime = Math.max(0, p.dashTime - dt);
+    // 冲刺位移
+    p.x += p.dashVx * dt;
+    p.y += p.dashVy * dt;
+    p.x = clamp(p.x, ARENA.x + p.r, ARENA.x + ARENA.w - p.r);
+    p.y = clamp(p.y, ARENA.y + p.r, ARENA.y + ARENA.h - p.r);
+    // 残影
+    if (g.rng() < 0.6) {
+      g.particles.push(makeParticle(p.x, p.y, 0, 0, 0.25, 'rgba(200,220,255,0.55)', 4));
+    }
+  } else {
+    // 移动
+    let mx = 0, my = 0;
+    if (input.left) mx -= 1;
+    if (input.right) mx += 1;
+    if (input.up) my -= 1;
+    if (input.down) my += 1;
+    const ml = Math.hypot(mx, my) || 1;
+    const spd = 160 * (1 + p.stats.speed / 100);
+    if (mx || my) {
+      p.x += (mx / ml) * spd * dt;
+      p.y += (my / ml) * spd * dt;
+      p.facing = Math.atan2(my, mx);
+      p.walkT += dt * 12;
+      p.moveX = mx / ml;
+      p.moveY = my / ml;
+    } else {
+      p.moveX = 0;
+      p.moveY = 0;
+    }
+    p.x = clamp(p.x, ARENA.x + p.r, ARENA.x + ARENA.w - p.r);
+    p.y = clamp(p.y, ARENA.y + p.r, ARENA.y + ARENA.h - p.r);
 
-  // 移动
-  let mx = 0, my = 0;
-  if (input.left) mx -= 1;
-  if (input.right) mx += 1;
-  if (input.up) my -= 1;
-  if (input.down) my += 1;
-  const ml = Math.hypot(mx, my) || 1;
-  const spd = 160 * (1 + p.stats.speed / 100);
-  if (mx || my) {
-    p.x += (mx / ml) * spd * dt;
-    p.y += (my / ml) * spd * dt;
-    p.facing = Math.atan2(my, mx);
-    p.walkT += dt * 10;
+    // 请求冲刺
+    if (input.dash) {
+      input.dash = false;
+      tryDash(g);
+    }
   }
-  p.x = clamp(p.x, ARENA.x + p.r, ARENA.x + ARENA.w - p.r);
-  p.y = clamp(p.y, ARENA.y + p.r, ARENA.y + ARENA.h - p.r);
 
   // 回血
   if (p.stats.hpRegen > 0 && p.hp > 0 && p.hp < p.stats.maxHp) {

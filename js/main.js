@@ -9,7 +9,7 @@ let paused = false;
 let showStatsHold = false;
 
 const input = {
-  up: false, down: false, left: false, right: false,
+  up: false, down: false, left: false, right: false, dash: false,
 };
 
 const KEYMAP = {
@@ -203,6 +203,10 @@ function onKeydown(e) {
   if (e.code === 'Tab') {
     e.preventDefault();
     showStatsHold = true;
+  }
+
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+    if (game && game.state === 'playing' && !paused) input.dash = true;
   }
 
   if (e.code === 'Escape' || e.code === 'KeyP') {

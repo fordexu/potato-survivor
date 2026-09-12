@@ -280,43 +280,48 @@ function drawGameInner(g, w, h) {
   ctx.fillStyle = '#141018';
   ctx.fillRect(0, 0, w, h);
 
-  // 地板 + 砖纹（优先素材砖）
+  // 地板：新贴图平铺 + 边框墙
   const floorA = getSpriteImg('floor:a');
   const floorB = getSpriteImg('floor:b');
+  const ts = 48;
   if (floorA && floorA.width) {
     ctx.imageSmoothingEnabled = false;
-    const ts = 32;
     for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += ts) {
       for (let x = ARENA.x; x < ARENA.x + ARENA.w; x += ts) {
-        const tile = ((x / ts + y / ts) | 0) % 2 === 0 ? floorA : (floorB || floorA);
-        ctx.drawImage(tile, x, y, ts, ts);
+        const ix = ((x - ARENA.x) / ts) | 0;
+        const iy = ((y - ARENA.y) / ts) | 0;
+        const useB = floorB && ((ix * 3 + iy * 5) % 7 === 0);
+        ctx.drawImage(useB ? floorB : floorA, x, y, ts + 1, ts + 1);
       }
     }
-    ctx.fillStyle = 'rgba(30, 24, 40, 0.55)';
+    // 轻微冷色压暗，保持可读
+    ctx.fillStyle = 'rgba(18, 14, 28, 0.22)';
     ctx.fillRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
   } else {
-    ctx.fillStyle = '#1e1826';
+    ctx.fillStyle = '#2a2234';
     ctx.fillRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
-    ctx.fillStyle = '#241c2e';
-    for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += 20) {
-      for (let x = ARENA.x + ((y / 20) % 2 === 0 ? 0 : 10); x < ARENA.x + ARENA.w; x += 20) {
-        ctx.fillRect(x, y, 9, 9);
+    ctx.fillStyle = '#322840';
+    for (let y = ARENA.y; y < ARENA.y + ARENA.h; y += 24) {
+      for (let x = ARENA.x + ((y / 24) % 2 === 0 ? 0 : 12); x < ARENA.x + ARENA.w; x += 24) {
+        ctx.fillRect(x, y, 11, 11);
       }
     }
   }
 
-  ctx.strokeStyle = '#2a2233';
+  // 外墙
+  const wall = 10;
+  ctx.fillStyle = '#1a1424';
+  ctx.fillRect(ARENA.x - wall, ARENA.y - wall, ARENA.w + wall * 2, wall);
+  ctx.fillRect(ARENA.x - wall, ARENA.y + ARENA.h, ARENA.w + wall * 2, wall);
+  ctx.fillRect(ARENA.x - wall, ARENA.y, wall, ARENA.h);
+  ctx.fillRect(ARENA.x + ARENA.w, ARENA.y, wall, ARENA.h);
+  ctx.strokeStyle = '#5a4a6a';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(ARENA.x - wall + 1, ARENA.y - wall + 1, ARENA.w + wall * 2 - 2, ARENA.h + wall * 2 - 2);
+  // 内描边
+  ctx.strokeStyle = '#6a5878';
   ctx.lineWidth = 1;
-  for (let x = ARENA.x; x <= ARENA.x + ARENA.w; x += 40) {
-    ctx.beginPath(); ctx.moveTo(x, ARENA.y); ctx.lineTo(x, ARENA.y + ARENA.h); ctx.stroke();
-  }
-  for (let y = ARENA.y; y <= ARENA.y + ARENA.h; y += 40) {
-    ctx.beginPath(); ctx.moveTo(ARENA.x, y); ctx.lineTo(ARENA.x + ARENA.w, y); ctx.stroke();
-  }
-
-  ctx.strokeStyle = '#4a3d55';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
+  ctx.strokeRect(ARENA.x + 0.5, ARENA.y + 0.5, ARENA.w - 1, ARENA.h - 1);
 
   // 暗角
   const vg = ctx.createRadialGradient(w / 2, h / 2, 240, w / 2, h / 2, Math.max(w, h) * 0.72);
@@ -429,28 +434,49 @@ function drawPlayer(p) {
 
   const bob = p.walkT ? Math.sin(p.walkT) * 1.5 : 0;
   const py = y + bob;
-  const size = R * 2.4;
+  let size = R * 2.4;
+  // 冲刺拉伸 / 走路挤压
+  let sx = 1, sy = 1;
+  if (p.dashTime > 0) {
+    sx = 1.25; sy = 0.85;
+  } else if (p.moveX || p.moveY) {
+    sx = 1 + Math.sin(p.walkT * 2) * 0.06;
+    sy = 1 - Math.sin(p.walkT * 2) * 0.06;
+  }
+  const dw = size * sx;
+  const dh = size * sy;
+  const flip = (p.moveX || p.facing) && Math.cos(p.facing || 0) < -0.15 ? -1 : 1;
 
-  // 优先使用外部素材
   const charKey = 'char:' + (p.charId || 'well-rounded');
-  if (!drawSpriteImg(ctx, charKey, x, py, size, size)) {
-    // 回退：土豆身体（直接绘制，保证可见）
+  ctx.save();
+  ctx.translate(x, py);
+  ctx.scale(flip, 1);
+  if (!drawSpriteImg(ctx, charKey, 0, 0, dw, dh)) {
     ctx.fillStyle = p.color || '#c4a56a';
     ctx.beginPath();
-    ctx.ellipse(x, py, R * 0.95, R, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(x - R * 0.5, py - R * 0.85, 5, 3);
-    ctx.fillRect(x + R * 0.2, py - R * 0.9, 5, 3);
-    ctx.fillRect(x - R * 0.7, py + R * 0.5, 3, 5);
-    ctx.fillRect(x + R * 0.4, py + R * 0.45, 3, 5);
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(x - R * 0.25, py - R * 0.3, R * 0.4, R * 0.3, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, R * 0.95 * sx, R * sy, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#2a2030';
-    ctx.fillRect(x - 5, py - 4, 3, 4);
-    ctx.fillRect(x + 2, py - 4, 3, 4);
-    ctx.fillRect(x - 2, py + 3, 4, 2);
+    ctx.fillRect(-5, -4, 3, 4);
+    ctx.fillRect(2, -4, 3, 4);
+    ctx.fillRect(-2, 3, 4, 2);
+  }
+  ctx.restore();
+
+  // 冲刺冷却环
+  if (p.dashCd > 0) {
+    const t = 1 - p.dashCd / 1.2;
+    ctx.strokeStyle = 'rgba(154, 208, 255, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, py, R + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = 'rgba(154, 208, 255, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, py, R + 6, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   // 武器

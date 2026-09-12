@@ -24,8 +24,8 @@ const SPRITE_MANIFEST = {
   'enemy:elite': 'assets/game/mob_beast.png',
   'enemy:boss': 'assets/game/mob_red.png',
   // 地板
-  'floor:a': 'assets/game/floor_a.png',
-  'floor:b': 'assets/game/floor_b.png',
+  'floor:a': 'assets/game/floor_arena.png',
+  'floor:b': 'assets/game/floor_accent.png',
 };
 
 function loadSpriteAssets(onProgress) {
