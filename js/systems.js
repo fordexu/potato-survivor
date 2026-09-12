@@ -8,7 +8,7 @@ function createGame(char, seed = Date.now()) {
     player.weapons.push(makeWeapon(WEAPONS[wid]));
   }
   return {
-    state: 'playing', // playing | shop | levelup | gameover | victory
+    state: 'playing', // playing | shop | levelup | gameover | victory | paused
     player,
     enemies: [],
     bullets: [],
@@ -24,12 +24,15 @@ function createGame(char, seed = Date.now()) {
     rng: mulberry32(seed),
     shake: 0,
     flash: 0,
+    hitStop: 0,
+    bossAlert: 0,
     shopItems: [],
     rerollCost: 5,
     upgradeChoices: [],
     pendingLevelUps: 0,
     pendingShop: false,
     score: 0,
+    timeScale: 1,
   };
 }
 
@@ -37,23 +40,38 @@ function startWave(g) {
   const cfg = getWaveConfig(g.wave);
   g.waveConfig = cfg;
   g.waveTime = cfg.time;
-  g.spawnTimer = 0.5;
+  g.spawnTimer = cfg.boss ? 1.2 : 0.5;
   g.spawned = 0;
   g.state = 'playing';
-  Sfx.wave();
+  if (cfg.boss) {
+    g.bossAlert = 1.4;
+    Sfx.boss();
+  } else {
+    Sfx.wave();
+  }
 }
 
 function enemyScale(g) {
-  return 1 + (g.wave - 1) * 0.12;
+  return 1 + (g.wave - 1) * 0.15;
 }
 
 function updatePlaying(g, dt, input) {
   const p = g.player;
+  // hit-stop
+  if (g.hitStop > 0) {
+    g.hitStop -= dt;
+    dt *= 0.25;
+  }
   g.elapsed += dt;
   g.waveTime -= dt;
   if (g.shake > 0) g.shake = Math.max(0, g.shake - dt * 18);
   if (g.flash > 0) g.flash = Math.max(0, g.flash - dt * 4);
+  if (g.bossAlert > 0) g.bossAlert -= dt;
   if (p.invuln > 0) p.invuln -= dt;
+  if (p.streakTimer > 0) {
+    p.streakTimer -= dt;
+    if (p.streakTimer <= 0) p.killStreak = 0;
+  }
 
   // 移动
   let mx = 0, my = 0;
@@ -94,38 +112,27 @@ function updatePlaying(g, dt, input) {
     }
   }
 
-  // 武器自动攻击
   updateWeapons(g, dt);
-
-  // 敌人
   updateEnemies(g, dt);
-
-  // 子弹
   updateBullets(g, dt);
-
-  // 拾取
   updatePickups(g, dt);
-
-  // 粒子/飘字
   updateFx(g, dt);
 
   // 波次结束
   if (g.waveTime <= 0 && g.enemies.length === 0 && g.spawned >= (g.waveConfig?.count || 0)) {
-    // 自动结算场上掉落
     for (const item of g.pickups) {
       if (item.kind === 'mat') p.materials += item.value;
       else if (item.kind === 'xp') addXp(g, item.value, true);
       else if (item.kind === 'heal') p.hp = Math.min(p.stats.maxHp, p.hp + item.value);
     }
     g.pickups.length = 0;
-    const bonus = Math.round(3 + g.wave * 1.5 + p.stats.harvesting * 0.15);
+    const bonus = Math.round(3 + g.wave * 2 + p.stats.harvesting * 0.2);
     p.materials += bonus;
     g.floats.push(makeFloatText(p.x, p.y - 28, `波次奖励 +${bonus}◈`, '#e8a838', 14));
     if (g.wave >= 20) {
       g.state = 'victory';
       Sfx.win();
     } else {
-      // 若升级触发，优先升级再进商店
       if (g.pendingLevelUps > 0) {
         g.pendingShop = true;
         openLevelup(g);
@@ -146,24 +153,22 @@ function updatePlaying(g, dt, input) {
 
 function updateWeapons(g, dt) {
   const p = g.player;
-  const dmgMul = 1 + p.stats.damage / 100;
   const asMul = 1 + p.stats.attackSpeed / 100;
   const rangeMul = 1 + p.stats.range / 100;
-
-  // 武器环绕偏移
   const n = p.weapons.length;
   for (let i = 0; i < n; i++) {
     const w = p.weapons[i];
     const baseAngle = (i / Math.max(1, n)) * Math.PI * 2;
     w.angle = baseAngle;
+    if (w.recoil > 0) w.recoil = Math.max(0, w.recoil - dt * 6);
 
-    // 找最近目标
     let target = null;
     let best = Infinity;
     const wx = p.x + Math.cos(baseAngle) * 18;
     const wy = p.y + Math.sin(baseAngle) * 10;
     const range = w.def.range * rangeMul * (1 + (w.level - 1) * 0.08);
     for (const e of g.enemies) {
+      if (e.spawnAnim > 0) continue;
       const d = dist({ x: wx, y: wy }, e);
       if (d < best && d < range) { best = d; target = e; }
     }
@@ -171,10 +176,20 @@ function updateWeapons(g, dt) {
     w.cd -= dt * asMul;
     if (w.fireAnim > 0) w.fireAnim -= dt * 4;
 
+    if (target) {
+      const aim = Math.atan2(target.y - wy, target.x - wx);
+      // 平滑转向
+      let da = aim - w.aimAngle;
+      while (da > Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      w.aimAngle += da * Math.min(1, dt * 10);
+    }
+
     if (target && w.cd <= 0) {
       w.cd = w.def.cooldown * (1 + (w.level - 1) * 0.04);
       w.fireAnim = 1;
-      fireWeapon(g, w, wx, wy, target, dmgMul, rangeMul);
+      w.recoil = 1;
+      fireWeapon(g, w, wx, wy, target, rangeMul);
     }
   }
 }
@@ -190,15 +205,14 @@ function rollDamage(g, base) {
   return { dmg, crit };
 }
 
-function fireWeapon(g, w, wx, wy, target, dmgMul, rangeMul) {
-  const p = g.player;
+function fireWeapon(g, w, wx, wy, target, rangeMul) {
   const def = w.def;
   const levelMul = 1 + (w.level - 1) * 0.25;
   const aim = Math.atan2(target.y - wy, target.x - wx);
-  Sfx.shoot();
+  w.aimAngle = aim;
+  Sfx.shoot(def.id);
 
   if (def.melee) {
-    // 近战：扇形判定
     const range = def.range * rangeMul * (1 + (w.level - 1) * 0.1);
     for (const e of g.enemies) {
       const d = dist({ x: wx, y: wy }, e);
@@ -213,11 +227,12 @@ function fireWeapon(g, w, wx, wy, target, dmgMul, rangeMul) {
         }
       }
     }
-    // 视觉粒子
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       const a = aim + (g.rng() - 0.5) * 1.2;
-      g.particles.push(makeParticle(wx, wy, Math.cos(a) * 80, Math.sin(a) * 80, 0.15, def.color, 3));
+      g.particles.push(makeParticle(wx, wy, Math.cos(a) * 100, Math.sin(a) * 100, 0.18, def.color, 3));
     }
+    // muzzle flash
+    g.particles.push(makeParticle(wx + Math.cos(aim) * 12, wy + Math.sin(aim) * 12, 0, 0, 0.08, '#fff8d0', 6));
     return;
   }
 
@@ -227,7 +242,6 @@ function fireWeapon(g, w, wx, wy, target, dmgMul, rangeMul) {
     const a = aim + spread;
     const speed = def.speed;
     const { dmg, crit } = rollDamage(g, def.damage * levelMul);
-    // 暴击记录在 bullet 上，命中时用
     const b = makeBullet(wx, wy, Math.cos(a) * speed, Math.sin(a) * speed, dmg, {
       size: def.bulletSize,
       pierce: def.pierce,
@@ -240,53 +254,73 @@ function fireWeapon(g, w, wx, wy, target, dmgMul, rangeMul) {
     b.crit = crit;
     g.bullets.push(b);
   }
+  // muzzle flash
+  g.particles.push(makeParticle(wx + Math.cos(aim) * 10, wy + Math.sin(aim) * 10, Math.cos(aim) * 40, Math.sin(aim) * 40, 0.07, def.color, 5));
 }
 
 function damageEnemy(g, e, dmg, crit, angle = 0, kb = 0) {
   if (e.dead) return;
   e.hp -= dmg;
-  e.hitFlash = 0.12;
+  e.hitFlash = 0.16;
+  if (crit) g.hitStop = Math.max(g.hitStop, 0.04);
   if (kb) {
-    const d = Math.hypot(Math.cos(angle), Math.sin(angle)) || 1;
-    e.vx += (Math.cos(angle) / 1) * kb;
-    e.vy += (Math.sin(angle) / 1) * kb;
+    e.vx += Math.cos(angle) * kb;
+    e.vy += Math.sin(angle) * kb;
     e.kb = 0.15;
   }
   g.player.damageDealt += dmg;
   const col = crit ? '#ffe060' : '#fff';
   g.floats.push(makeFloatText(e.x, e.y - e.r - 4, Math.round(dmg) + (crit ? '!' : ''), col, crit ? 14 : 11));
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < (crit ? 6 : 3); i++) {
     g.particles.push(makeParticle(e.x, e.y, (g.rng() - 0.5) * 100, (g.rng() - 0.5) * 100, 0.25, e.color, 2));
   }
 
   if (e.hp <= 0) {
     e.dead = true;
-    g.player.kills++;
+    const p = g.player;
+    p.kills++;
+    p.killStreak++;
+    p.streakTimer = 2.5;
     g.score += Math.round(e.maxHp);
-    Sfx.kill();
-    // 掉落
-    const luckBonus = g.player.stats.luck / 100;
-    if (g.rng() < 0.85 + luckBonus * 0.1) {
-      const matVal = Math.max(1, Math.round(e.mat * (1 + g.player.stats.harvesting / 100)));
+    Sfx.kill(p.killStreak);
+
+    // 吸血牙
+    const ls = p.passives.lifesteal || 0;
+    if (ls > 0 && p.hp < p.stats.maxHp) {
+      p.hp = Math.min(p.stats.maxHp, p.hp + ls);
+      g.floats.push(makeFloatText(p.x, p.y - 22, `+${ls}`, '#7bc96f', 11));
+    }
+
+    const luckBonus = p.stats.luck / 100;
+    if (g.rng() < 0.9 + luckBonus * 0.08) {
+      const matVal = Math.max(1, Math.round(e.mat * (1 + p.stats.harvesting / 100)));
       g.pickups.push(makePickup(e.x, e.y, 'mat', matVal));
+    }
+    // 赏金令
+    const bounty = p.passives.bounty || 0;
+    if (bounty > 0) {
+      const bv = Math.round(bounty * (1 + p.stats.harvesting / 100));
+      g.pickups.push(makePickup(e.x + 8, e.y, 'mat', bv));
     }
     g.pickups.push(makePickup(e.x + (g.rng() - 0.5) * 10, e.y + (g.rng() - 0.5) * 10, 'xp', e.xp));
     if (g.rng() < 0.03 + luckBonus * 0.05) {
       g.pickups.push(makePickup(e.x, e.y, 'heal', 2));
     }
-    // 爆裂
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < (e.boss ? 20 : e.elite ? 12 : 8); i++) {
       const a = g.rng() * Math.PI * 2;
-      const sp = 40 + g.rng() * 80;
+      const sp = 40 + g.rng() * 100;
       g.particles.push(makeParticle(e.x, e.y, Math.cos(a) * sp, Math.sin(a) * sp, 0.35, e.color, 3));
     }
-    if (e.boss) g.shake = 12;
+    if (e.boss) {
+      g.shake = 14;
+      g.hitStop = 0.12;
+    } else if (e.elite) g.shake = Math.max(g.shake, 6);
   }
 }
 
 function damagePlayer(g, amount) {
   const p = g.player;
-  if (p.invuln > 0) return;
+  if (p.invuln > 0 || g.state !== 'playing') return;
   if (g.rng() * 100 < p.stats.dodge) {
     g.floats.push(makeFloatText(p.x, p.y - 20, '闪避', '#6fd3c8', 12));
     return;
@@ -304,7 +338,22 @@ function damagePlayer(g, amount) {
     g.particles.push(makeParticle(p.x, p.y, Math.cos(a) * 60, Math.sin(a) * 60, 0.3, '#e85a5a', 3));
   }
   if (p.hp <= 0) {
-    p.hp = 0;
+    if (p.revive && !p.revived) {
+      p.revived = true;
+      p.hp = Math.ceil(p.stats.maxHp * 0.5);
+      p.invuln = 1.5;
+      g.shake = 10;
+      g.floats.push(makeFloatText(p.x, p.y - 30, '复活！', '#7bc96f', 16));
+      Sfx.levelup();
+      for (let i = 0; i < 20; i++) {
+        const a = g.rng() * Math.PI * 2;
+        g.particles.push(makeParticle(p.x, p.y, Math.cos(a) * 120, Math.sin(a) * 120, 0.5, '#7bc96f', 3));
+      }
+    } else {
+      p.hp = 0;
+      g.state = 'gameover';
+      Sfx.lose();
+    }
   }
 }
 
@@ -312,6 +361,10 @@ function updateEnemies(g, dt) {
   const p = g.player;
   for (const e of g.enemies) {
     if (e.dead) continue;
+    if (e.spawnAnim > 0) {
+      e.spawnAnim -= dt;
+      continue;
+    }
     if (e.hitFlash > 0) e.hitFlash -= dt;
     if (e.kb > 0) {
       e.kb -= dt;
@@ -458,7 +511,7 @@ function updateBullets(g, dt) {
 
 function updatePickups(g, dt) {
   const p = g.player;
-  const pickupR = 90 * (1 + p.stats.pickupRange / 100);
+  const pickupR = 100 * (1 + p.stats.pickupRange / 100);
   for (const item of g.pickups) {
     item.bob += dt * 4;
     const d = dist(item, p);
@@ -495,7 +548,7 @@ function addXp(g, amount, silent = false) {
   while (p.xp >= p.xpNeed) {
     p.xp -= p.xpNeed;
     p.level++;
-    p.xpNeed = Math.floor(8 + p.level * 4.5);
+    p.xpNeed = Math.floor(6 + p.level * 5);
     g.pendingLevelUps++;
   }
   if (!silent && g.pendingLevelUps > 0 && g.state === 'playing') {
@@ -539,33 +592,37 @@ function applyUpgrade(g, upgrade) {
 function generateShop(g) {
   const items = [];
   const p = g.player;
-  // 4 个商品
   const slots = 4 + (g.rng() < 0.3 + p.stats.luck / 200 ? 1 : 0);
+  const ownedIds = new Set(p.weapons.map(w => w.def.id));
   for (let i = 0; i < slots; i++) {
     const kindRoll = g.rng();
-    if (kindRoll < 0.45) {
-      // 武器
+    if (kindRoll < 0.4) {
       const wids = Object.keys(WEAPONS);
       const pick = wids[Math.floor(g.rng() * wids.length)];
       const def = WEAPONS[pick];
-      // 幸运影响品质
       let rarity = def.rarity;
       if (g.rng() < p.stats.luck / 200) {
         const idx = RARITY_ORDER.indexOf(rarity);
         rarity = RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, idx + 1)];
       }
+      const owned = ownedIds.has(pick);
+      const full = p.weapons.length >= 6;
+      let hint = '';
+      if (owned && !full) hint = '已持有 · 再购多一件';
+      else if (owned && full) hint = '已持有 · 将升级该武器';
+      else if (full) hint = '槽位已满 · 随机升级一件';
       items.push({
         kind: 'weapon',
         id: pick,
         name: def.name,
         icon: def.icon,
-        desc: def.desc,
+        desc: def.desc + (hint ? `\n${hint}` : ''),
         rarity,
-        price: Math.round(def.price * (1 + (g.wave - 1) * 0.08)),
+        price: Math.round(def.price * (1 + (g.wave - 1) * 0.06)),
         weapon: def,
+        owned,
       });
-    } else if (kindRoll < 0.75) {
-      // 属性升级
+    } else if (kindRoll < 0.62) {
       const u = pickWeighted(UPGRADES, g.rng, x => x.weight);
       items.push({
         kind: 'upgrade',
@@ -577,8 +634,7 @@ function generateShop(g) {
         price: 8 + g.wave + Math.floor(g.rng() * 6),
         upgrade: u,
       });
-    } else {
-      // 消耗品
+    } else if (kindRoll < 0.82) {
       const c = CONSUMABLES[Math.floor(g.rng() * CONSUMABLES.length)];
       items.push({
         kind: 'consumable',
@@ -589,6 +645,18 @@ function generateShop(g) {
         rarity: c.rarity,
         price: c.price,
         consumable: c,
+      });
+    } else {
+      const ps = PASSIVES[Math.floor(g.rng() * PASSIVES.length)];
+      items.push({
+        kind: 'passive',
+        id: ps.id,
+        name: ps.name,
+        icon: ps.icon,
+        desc: ps.desc,
+        rarity: ps.rarity,
+        price: Math.round(ps.price * (1 + (g.wave - 1) * 0.06)),
+        passive: ps,
       });
     }
   }
@@ -612,17 +680,15 @@ function buyShopItem(g, idx) {
     if (p.weapons.length < 6) {
       p.weapons.push(makeWeapon(item.weapon));
     } else {
-      // 升级已有同类型
       const same = p.weapons.find(w => w.def.id === item.weapon.id);
       if (same) same.level++;
-      else {
-        // 替换最弱？简化：升随机一件
-        const w = p.weapons[Math.floor(g.rng() * p.weapons.length)];
-        w.level++;
-      }
+      else p.weapons[Math.floor(g.rng() * p.weapons.length)].level++;
     }
   } else if (item.kind === 'upgrade') {
     item.upgrade.apply(p.stats);
+    if (p.hp > p.stats.maxHp) p.hp = p.stats.maxHp;
+  } else if (item.kind === 'passive') {
+    item.passive.apply(p);
     if (p.hp > p.stats.maxHp) p.hp = p.stats.maxHp;
   } else if (item.kind === 'consumable') {
     item.consumable.use(g);

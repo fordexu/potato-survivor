@@ -44,10 +44,11 @@
         <p class="subtitle">Potato Survivor</p>
         <p class="hint">自动射击 · 波次生存 · 商店强化</p>
         <button id="btn-start" class="btn primary">开始游戏</button>
+        <button id="btn-help" class="btn">玩法说明</button>
         <div class="controls">
           <div><kbd>WASD</kbd> / <kbd>方向键</kbd> 移动（武器自动射击）</div>
-          <div><kbd>空格</kbd> / <kbd>Enter</kbd> 下一波 · <kbd>R</kbd> 重铸</div>
-          <div><kbd>1-6</kbd> 购买/升级 · <kbd>M</kbd> 音效开关</div>
+          <div><kbd>Tab</kbd> 属性 · <kbd>Esc</kbd> 暂停 · <kbd>M</kbd> 音效</div>
+          <div><kbd>空格</kbd> 下一波 · <kbd>R</kbd> 重铸 · <kbd>1-6</kbd> 购买/升级</div>
         </div>
       </div>
     </div>
@@ -79,12 +80,44 @@
             <span>重铸 <strong id="reroll-cost">5</strong> ◈</span>
           </div>
         </div>
+        <div id="wave-preview" class="wave-preview"></div>
         <div id="shop-items" class="shop-grid"></div>
         <div class="shop-actions">
           <button id="btn-reroll" class="btn">重铸 (R)</button>
           <button id="btn-next-wave" class="btn primary">下一波 (空格)</button>
         </div>
+        <div id="stats-panel" class="stats-panel"></div>
       </div>
+    </div>
+
+    <!-- 暂停 -->
+    <div id="pause-layer" class="overlay hidden">
+      <div class="panel">
+        <h2>已暂停</h2>
+        <div id="stats-panel-pause" class="stats-panel" style="margin:12px 0"></div>
+        <button id="btn-resume" class="btn primary">继续 (Esc)</button>
+        <button id="btn-pause-menu" class="btn">主菜单</button>
+      </div>
+    </div>
+
+    <!-- 帮助 -->
+    <div id="help-layer" class="overlay hidden">
+      <div class="panel">
+        <h2>玩法说明</h2>
+        <div class="help-body">
+          <p>选择土豆进入竞技场。武器会自动攻击最近敌人，你只需走位躲弹。</p>
+          <p>击杀掉落 <b style="color:#e8a838">材料 ◈</b> 与经验。升级时四选一强化属性。</p>
+          <p>每波结束后进入商店：买武器（最多 6 槽）、属性、消耗品、被动。</p>
+          <p>同类型武器在满槽时购买会直接升级。第 20 波击败暴君即胜利。</p>
+          <p>被动示例：吸血牙、重甲片、弹药带、赏金令。</p>
+        </div>
+        <button id="btn-help-close" class="btn primary">明白了</button>
+      </div>
+    </div>
+
+    <!-- Tab 属性悬浮 -->
+    <div id="stats-overlay" class="stats-overlay hidden">
+      <div id="stats-panel-tab" class="stats-panel"></div>
     </div>
 
     <!-- 波次预告 -->

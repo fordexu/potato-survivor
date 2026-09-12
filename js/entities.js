@@ -35,18 +35,24 @@ function makePlayer(char) {
     r: 14,
     color: char.color,
     icon: char.icon,
+    charId: char.id,
     hp: s.maxHp,
     stats: s,
     weapons: [],
+    passives: {},
+    revive: !!char.revive,
+    revived: false,
     invuln: 0,
     facing: 0,
     walkT: 0,
     level: 1,
     xp: 0,
-    xpNeed: 8,
+    xpNeed: 6,
     materials: 0,
     kills: 0,
     damageDealt: 0,
+    killStreak: 0,
+    streakTimer: 0,
   };
 }
 
@@ -56,13 +62,17 @@ function makeWeapon(def) {
     level: 1,
     cd: Math.random() * def.cooldown,
     angle: 0,
+    aimAngle: 0,
     fireAnim: 0,
+    recoil: 0,
   };
 }
 
 function makeEnemy(typeId, x, y, scale = 1) {
   const base = ENEMY_TYPES[typeId];
   const hpScale = 1 + (scale - 1);
+  const dmgScale = 1 + (scale - 1) * 0.5;
+  const matMul = (typeId === 'elite' || typeId === 'boss') ? 1.5 : 1;
   return {
     id: nextId(),
     type: typeId,
@@ -71,10 +81,10 @@ function makeEnemy(typeId, x, y, scale = 1) {
     hp: base.hp * hpScale,
     maxHp: base.hp * hpScale,
     speed: base.speed * (0.9 + Math.random() * 0.2),
-    damage: base.damage * (1 + (scale - 1) * 0.5),
+    damage: base.damage * dmgScale,
     color: base.color,
     xp: base.xp,
-    mat: base.mat,
+    mat: Math.round(base.mat * matMul),
     touchDamage: base.touchDamage,
     shootRange: base.shootRange || 0,
     shootCooldown: base.shootCooldown || 0,
@@ -87,6 +97,7 @@ function makeEnemy(typeId, x, y, scale = 1) {
     vx: 0,
     vy: 0,
     kb: 0,
+    spawnAnim: 0.45,
   };
 }
 
@@ -172,4 +183,99 @@ function shuffle(arr, rng) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// ===== 像素 sprite 预渲染 =====
+const SpriteCache = new Map();
+
+function makeSpriteCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+function drawPixelBlob(g, color, r, style) {
+  const size = r * 2 + 2;
+  const c = makeSpriteCanvas(size, size);
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  const cx = size / 2, cy = size / 2;
+  const px = Math.max(2, Math.floor(r / 5));
+
+  // 身体
+  x.fillStyle = color;
+  if (style === 'circle') {
+    x.beginPath();
+    x.arc(cx, cy, r, 0, Math.PI * 2);
+    x.fill();
+  } else if (style === 'diamond') {
+    x.beginPath();
+    x.moveTo(cx, cy - r);
+    x.lineTo(cx + r, cy);
+    x.lineTo(cx, cy + r);
+    x.lineTo(cx - r, cy);
+    x.closePath();
+    x.fill();
+  } else if (style === 'hex') {
+    x.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const pxx = cx + Math.cos(a) * r;
+      const pyy = cy + Math.sin(a) * r;
+      if (i === 0) x.moveTo(pxx, pyy); else x.lineTo(pxx, pyy);
+    }
+    x.closePath();
+    x.fill();
+  } else if (style === 'potato') {
+    // 土豆：略椭圆 + 边缘像素块
+    x.beginPath();
+    x.ellipse(cx, cy, r * 0.95, r, 0, 0, Math.PI * 2);
+    x.fill();
+    // 边缘锯齿像素
+    x.fillStyle = color;
+    x.fillRect(cx - r * 0.5, cy - r * 0.85, px * 2, px);
+    x.fillRect(cx + r * 0.2, cy - r * 0.9, px * 2, px);
+    x.fillRect(cx - r * 0.7, cy + r * 0.5, px, px * 2);
+    x.fillRect(cx + r * 0.4, cy + r * 0.45, px, px * 2);
+  } else {
+    x.beginPath();
+    x.arc(cx, cy, r, 0, Math.PI * 2);
+    x.fill();
+  }
+
+  // 高光
+  x.fillStyle = 'rgba(255,255,255,0.2)';
+  x.fillRect(cx - r * 0.35, cy - r * 0.4, px * 2, px * 2);
+
+  // 眼睛
+  x.fillStyle = '#1a1018';
+  const ey = cy - r * 0.12;
+  x.fillRect(cx - r * 0.4, ey, px, px + 1);
+  x.fillRect(cx + r * 0.15, ey, px, px + 1);
+
+  if (style === 'potato') {
+    // 嘴
+    x.fillRect(cx - px, cy + r * 0.2, px * 2, px);
+    // 腮红
+    x.fillStyle = 'rgba(200,80,80,0.25)';
+    x.fillRect(cx - r * 0.55, cy + r * 0.05, px, px);
+    x.fillRect(cx + r * 0.35, cy + r * 0.05, px, px);
+  }
+
+  return c;
+}
+
+function getSprite(key, factory) {
+  if (!SpriteCache.has(key)) SpriteCache.set(key, factory());
+  return SpriteCache.get(key);
+}
+
+function getPlayerSprite(color) {
+  return getSprite('p:' + color, () => drawPixelBlob(color, 14, 'potato'));
+}
+
+function getEnemySprite(typeId, color, r) {
+  const style = typeId === 'elite' ? 'diamond' : typeId === 'boss' ? 'hex' : 'circle';
+  return getSprite('e:' + typeId + color + r, () => drawPixelBlob(color, r, style));
 }

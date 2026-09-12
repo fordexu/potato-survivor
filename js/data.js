@@ -55,6 +55,25 @@ const CHARACTERS = [
     startWeapons: ['pistol'],
     color: '#d4c06a',
   },
+  {
+    id: 'zombie',
+    name: '僵尸土豆',
+    icon: '🧟',
+    desc: '死亡后一次复活（半血）',
+    stats: { maxHp: 12, hpRegen: 1, damage: 5, attackSpeed: 5, range: 0, critChance: 0, critMult: 1.5, armor: 1, speed: -5, luck: 0, harvesting: 0, dodge: 0, pickupRange: 0 },
+    startWeapons: ['fist'],
+    color: '#7ab87a',
+    revive: true,
+  },
+  {
+    id: 'gambler',
+    name: '赌徒土豆',
+    icon: '🎰',
+    desc: '暴击极高，身板极脆',
+    stats: { maxHp: 5, hpRegen: 0, damage: 10, attackSpeed: 10, range: 5, critChance: 25, critMult: 2.5, armor: 0, speed: 10, luck: 20, harvesting: -10, dodge: 10, pickupRange: 0 },
+    startWeapons: ['smg'],
+    color: '#d4a0e8',
+  },
 ];
 
 const WEAPONS = {
@@ -160,6 +179,29 @@ const CONSUMABLES = [
   { id: 'heal_s', name: '小回复', icon: '🍎', desc: '回复 5 点生命', price: 8, rarity: 'common', use: g => { g.player.hp = Math.min(g.player.stats.maxHp, g.player.hp + 5); } },
   { id: 'heal_l', name: '大回复', icon: '🍖', desc: '回复 15 点生命', price: 18, rarity: 'uncommon', use: g => { g.player.hp = Math.min(g.player.stats.maxHp, g.player.hp + 15); } },
   { id: 'full_heal', name: '满血药剂', icon: '🧪', desc: '完全恢复生命', price: 35, rarity: 'rare', use: g => { g.player.hp = g.player.stats.maxHp; } },
+];
+
+const PASSIVES = [
+  {
+    id: 'lifesteal', name: '吸血牙', icon: '🦷', rarity: 'uncommon', price: 28,
+    desc: '击杀敌人回复 1 点生命',
+    apply: p => { p.passives.lifesteal = (p.passives.lifesteal || 0) + 1; },
+  },
+  {
+    id: 'heavy_plate', name: '重甲片', icon: '🛡️', rarity: 'uncommon', price: 30,
+    desc: '+8 护甲，-5% 移速',
+    apply: p => { p.stats.armor += 8; p.stats.speed -= 5; },
+  },
+  {
+    id: 'ammo_belt', name: '弹药带', icon: '🎗️', rarity: 'rare', price: 36,
+    desc: '+12% 攻击速度',
+    apply: p => { p.stats.attackSpeed += 12; },
+  },
+  {
+    id: 'bounty', name: '赏金令', icon: '💰', rarity: 'rare', price: 40,
+    desc: '击杀额外 +1 材料（受收获加成）',
+    apply: p => { p.passives.bounty = (p.passives.bounty || 0) + 1; },
+  },
 ];
 
 const ENEMY_TYPES = {

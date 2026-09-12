@@ -2,6 +2,7 @@
 const Sfx = (() => {
   let ctx = null;
   let enabled = true;
+  let streak = 0;
 
   function ensure() {
     if (!ctx) {
@@ -47,12 +48,26 @@ const Sfx = (() => {
     src.start();
   }
 
+  const SHOOT_FREQ = {
+    pistol: 880, smg: 980, shotgun: 420, sniper: 1200, fist: 200,
+    flamethrower: 300, rocket: 180, laser: 1400, wand: 700, minigun: 1100,
+  };
+
   return {
     unlock() { ensure(); },
     toggle() { enabled = !enabled; return enabled; },
-    shoot() { tone(880 + Math.random() * 120, 0.05, 'square', 0.025, -400); },
+    isEnabled() { return enabled; },
+    shoot(weaponId) {
+      const f = SHOOT_FREQ[weaponId] || 880;
+      tone(f + Math.random() * 80, 0.045, weaponId === 'fist' ? 'triangle' : 'square', 0.022, -f * 0.4);
+      if (weaponId === 'shotgun' || weaponId === 'rocket') noise(0.05, 0.03);
+    },
     hit() { tone(220, 0.04, 'triangle', 0.03, -80); },
-    kill() { tone(320, 0.08, 'square', 0.04, -180); noise(0.06, 0.02); },
+    kill(n) {
+      const pitch = 320 + Math.min(10, n || 0) * 28;
+      tone(pitch, 0.08, 'square', 0.04, -pitch * 0.5);
+      noise(0.05, 0.02);
+    },
     hurt() { tone(140, 0.12, 'sawtooth', 0.05, -60); noise(0.08, 0.03); },
     pickup() { tone(660, 0.06, 'sine', 0.03, 220); },
     levelup() {
@@ -65,6 +80,11 @@ const Sfx = (() => {
     wave() {
       tone(392, 0.15, 'triangle', 0.05, 0);
       setTimeout(() => tone(523, 0.2, 'triangle', 0.05, 0), 120);
+    },
+    boss() {
+      tone(80, 0.4, 'sawtooth', 0.07, 20);
+      setTimeout(() => tone(60, 0.5, 'sawtooth', 0.06, 10), 200);
+      noise(0.3, 0.04);
     },
     win() {
       [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'square', 0.05), i * 120));
