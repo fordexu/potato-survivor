@@ -6,16 +6,19 @@ function arenaCenter() {
   return { x: ARENA.x + ARENA.w / 2, y: ARENA.y + ARENA.h / 2 };
 }
 
-function createGame(char, seed = Date.now()) {
+function createGame(char, seed = Date.now(), difficultyId = 'normal') {
   const player = makePlayer(char);
   const c = arenaCenter();
   player.x = c.x;
   player.y = c.y;
+  const diff = getDifficulty(difficultyId);
+  player.materials += diff.startBonus || 0;
   for (const wid of char.startWeapons) {
     player.weapons.push(makeWeapon(WEAPONS[wid]));
   }
   return {
-    state: 'playing', // playing | shop | levelup | gameover | victory | paused
+    state: 'playing',
+    difficulty: diff,
     player,
     enemies: [],
     bullets: [],
@@ -45,12 +48,17 @@ function createGame(char, seed = Date.now()) {
 
 function startWave(g) {
   const cfg = getWaveConfig(g.wave);
-  g.waveConfig = cfg;
+  const diff = g.difficulty || getDifficulty('normal');
+  g.waveConfig = {
+    ...cfg,
+    count: Math.max(1, Math.round(cfg.count * (diff.enemyCount || 1))),
+    spawnRate: cfg.spawnRate * (diff.spawnRate || 1),
+  };
   g.waveTime = cfg.time;
-  g.spawnTimer = cfg.boss ? 1.2 : 0.5;
+  g.spawnTimer = g.waveConfig.boss ? 1.2 : 0.5;
   g.spawned = 0;
   g.state = 'playing';
-  if (cfg.boss) {
+  if (g.waveConfig.boss) {
     g.bossAlert = 1.4;
     Sfx.boss();
   } else {
@@ -59,7 +67,8 @@ function startWave(g) {
 }
 
 function enemyScale(g) {
-  return 1 + (g.wave - 1) * 0.15;
+  const base = 1 + (g.wave - 1) * 0.15;
+  return base * ((g.difficulty && g.difficulty.enemyHp) || 1);
 }
 
 function updatePlaying(g, dt, input) {
@@ -115,6 +124,9 @@ function updatePlaying(g, dt, input) {
       if (cfg.boss && g.spawned === 0) type = 'boss';
       const pos = spawnEdgePos(ARENA, g.rng);
       g.enemies.push(makeEnemy(type, pos.x, pos.y, enemyScale(g)));
+      const e = g.enemies[g.enemies.length - 1];
+      e.damage *= (g.difficulty && g.difficulty.enemyDmg) || 1;
+      e.speed *= (g.difficulty && g.difficulty.enemySpeed) || 1;
       g.spawned++;
     }
   }
@@ -204,7 +216,8 @@ function updateWeapons(g, dt) {
 
 function rollDamage(g, base) {
   const p = g.player;
-  let dmg = base * (1 + p.stats.damage / 100);
+  const dmul = (g.difficulty && g.difficulty.playerDmgMul) || 1;
+  let dmg = base * (1 + p.stats.damage / 100) * dmul;
   let crit = false;
   if (g.rng() * 100 < p.stats.critChance) {
     dmg *= p.stats.critMult;
@@ -300,17 +313,19 @@ function damageEnemy(g, e, dmg, crit, angle = 0, kb = 0) {
     }
 
     const luckBonus = p.stats.luck / 100;
+    const matMulD = (g.difficulty && g.difficulty.matMul) || 1;
+    const xpMulD = (g.difficulty && g.difficulty.xpMul) || 1;
     if (g.rng() < 0.9 + luckBonus * 0.08) {
-      const matVal = Math.max(1, Math.round(e.mat * (1 + p.stats.harvesting / 100)));
+      const matVal = Math.max(1, Math.round(e.mat * (1 + p.stats.harvesting / 100) * matMulD));
       g.pickups.push(makePickup(e.x, e.y, 'mat', matVal));
     }
     // 赏金令
     const bounty = p.passives.bounty || 0;
     if (bounty > 0) {
-      const bv = Math.round(bounty * (1 + p.stats.harvesting / 100));
+      const bv = Math.round(bounty * (1 + p.stats.harvesting / 100) * matMulD);
       g.pickups.push(makePickup(e.x + 8, e.y, 'mat', bv));
     }
-    g.pickups.push(makePickup(e.x + (g.rng() - 0.5) * 10, e.y + (g.rng() - 0.5) * 10, 'xp', e.xp));
+    g.pickups.push(makePickup(e.x + (g.rng() - 0.5) * 10, e.y + (g.rng() - 0.5) * 10, 'xp', Math.max(1, Math.round(e.xp * xpMulD))));
     if (g.rng() < 0.03 + luckBonus * 0.05) {
       g.pickups.push(makePickup(e.x, e.y, 'heal', 2));
     }

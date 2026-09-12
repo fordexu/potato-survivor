@@ -1,5 +1,72 @@
 // ===== 静态配置数据 =====
 
+const DIFFICULTIES = [
+  {
+    id: 'easy',
+    name: '轻松',
+    icon: '🌱',
+    desc: '敌人更弱，材料更多，适合熟悉操作',
+    enemyHp: 0.7,
+    enemyDmg: 0.65,
+    enemySpeed: 0.9,
+    spawnRate: 1.15, // 刷怪间隔更长
+    enemyCount: 0.85,
+    matMul: 1.35,
+    xpMul: 1.2,
+    startBonus: 15,
+    playerDmgMul: 1.1,
+  },
+  {
+    id: 'normal',
+    name: '标准',
+    icon: '⚔️',
+    desc: '默认平衡难度',
+    enemyHp: 1,
+    enemyDmg: 1,
+    enemySpeed: 1,
+    spawnRate: 1,
+    enemyCount: 1,
+    matMul: 1,
+    xpMul: 1,
+    startBonus: 5,
+    playerDmgMul: 1,
+  },
+  {
+    id: 'hard',
+    name: '困难',
+    icon: '🔥',
+    desc: '敌人更硬更快，掉落略减',
+    enemyHp: 1.35,
+    enemyDmg: 1.3,
+    enemySpeed: 1.1,
+    spawnRate: 0.85,
+    enemyCount: 1.2,
+    matMul: 0.9,
+    xpMul: 1,
+    startBonus: 0,
+    playerDmgMul: 1,
+  },
+  {
+    id: 'nightmare',
+    name: '噩梦',
+    icon: '💀',
+    desc: '敌潮汹涌，高风险高回报',
+    enemyHp: 1.8,
+    enemyDmg: 1.6,
+    enemySpeed: 1.2,
+    spawnRate: 0.7,
+    enemyCount: 1.45,
+    matMul: 1.15,
+    xpMul: 1.15,
+    startBonus: 0,
+    playerDmgMul: 1,
+  },
+];
+
+function getDifficulty(id) {
+  return DIFFICULTIES.find(d => d.id === id) || DIFFICULTIES[1];
+}
+
 const CHARACTERS = [
   {
     id: 'well-rounded',

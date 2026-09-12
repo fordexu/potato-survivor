@@ -9,6 +9,27 @@ function show(id) { $(id).classList.remove('hidden'); }
 function hide(id) { $(id).classList.add('hidden'); }
 
 function renderCharacterSelect() {
+  // 难度
+  const dlist = $('diff-list');
+  if (dlist) {
+    dlist.innerHTML = '';
+    DIFFICULTIES.forEach((d) => {
+      const el = document.createElement('div');
+      el.className = 'diff-card' + (selectedDifficulty === d.id ? ' active' : '');
+      el.innerHTML = `
+        <div class="diff-icon">${d.icon}</div>
+        <div class="diff-name">${d.name}</div>
+        <div class="diff-desc">${d.desc}</div>
+      `;
+      el.onclick = () => {
+        selectedDifficulty = d.id;
+        saveSetting('ps_diff', d.id);
+        renderCharacterSelect();
+      };
+      dlist.appendChild(el);
+    });
+  }
+
   const list = $('char-list');
   list.innerHTML = '';
   const STAT_LABELS = [
@@ -217,6 +238,7 @@ function renderEnd(g, victory) {
   const p = g.player;
   $('end-title').textContent = victory ? '胜利！' : '你倒下了';
   $('end-stats').innerHTML = `
+    <div>难度 <span>${(g.difficulty && g.difficulty.name) || '标准'}</span></div>
     <div>到达波次 <span>${g.wave}</span></div>
     <div>击杀 <span>${p.kills}</span></div>
     <div>等级 <span>${p.level}</span></div>

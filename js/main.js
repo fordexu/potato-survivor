@@ -2,6 +2,7 @@
 
 let game = null;
 let selectedChar = null;
+let selectedDifficulty = 'normal';
 let lastTs = 0;
 let running = false;
 let paused = false;
@@ -24,8 +25,9 @@ function loadSettings() {
     return {
       mute: localStorage.getItem('ps_mute') === '1',
       lastChar: localStorage.getItem('ps_last_char') || null,
+      lastDiff: localStorage.getItem('ps_diff') || 'normal',
     };
-  } catch { return { mute: false, lastChar: null }; }
+  } catch { return { mute: false, lastChar: null, lastDiff: 'normal' }; }
 }
 function saveSetting(k, v) {
   try { localStorage.setItem(k, v); } catch { /* ignore */ }
@@ -61,7 +63,7 @@ function onBuy(i) {
 }
 
 function startNewGame(char) {
-  game = createGame(char);
+  game = createGame(char, Date.now(), selectedDifficulty);
   paused = false;
   running = true;
   lastTs = performance.now();
@@ -295,5 +297,8 @@ $('btn-pause-menu').onclick = () => goMenu();
   if (typeof loadSpriteAssets === 'function') {
     loadSpriteAssets().catch(() => { /* keep fallback drawing */ });
   }
+  try {
+    selectedDifficulty = loadSettings().lastDiff || 'normal';
+  } catch (e) { selectedDifficulty = 'normal'; }
   requestAnimationFrame(loop);
 })();

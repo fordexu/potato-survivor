@@ -596,3 +596,35 @@ h2 {
   color: #6a5a7a;
   font-size: 11px;
 }
+
+.diff-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.diff-card {
+  pointer-events: auto;
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  padding: 10px 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .12s, transform .08s;
+}
+
+.diff-card:hover { border-color: var(--muted); transform: translateY(-1px); }
+.diff-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232,168,56,.35);
+  background: #3a2c1c;
+}
+
+.diff-icon { font-size: 22px; }
+.diff-name { font-weight: 800; margin-top: 4px; }
+.diff-desc { font-size: 10px; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+
+@media (max-width: 700px) {
+  .diff-list { grid-template-columns: repeat(2, 1fr); }
+}
